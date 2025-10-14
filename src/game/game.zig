@@ -210,8 +210,8 @@ fn render(self: *Game) !void {
     // Draw dragged piece
     if (self.state.dragging_piece) |drag| {
         const mouse_pos = rl.GetMousePosition();
-        const piece_x = mouse_pos.x - drag.mouse_offset.x;
-        const piece_y = mouse_pos.y - drag.mouse_offset.y;
+        const piece_x = mouse_pos.x - @as(f32, @floatFromInt(Constants.SQUARE_SIZE)) / 2.0;
+        const piece_y = mouse_pos.y - @as(f32, @floatFromInt(Constants.SQUARE_SIZE)) / 2.0;
         drawPiece(&self.state.textures, drag.piece, piece_x, piece_y);
     }
 
