@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <title>Raylib Web App</title>
+    <style>
+        body {
+            margin: 0;
+            background: #111;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        canvas.emscripten {
+            border: 1px solid #333;
+            outline: none;
+            image-rendering: optimizeQuality;
+            width: auto;
+            height: auto;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas" class="emscripten" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+
+    <script>
+        // Configure the Emscripten Module before loading chess.js
+        var Module = {
+            canvas: (function () {
+                const canvas = document.getElementById('canvas');
+                return canvas;
+            })(),
+            print: (text) => console.log(text),
+            printErr: (text) => console.error(text),
+
+            // This runs once the runtime and raylib are initialized
+            onRuntimeInitialized() {
+                console.log("Raylib WebAssembly initialized!");
+                // Query the raylib window size via exported C functions if you want
+                // For example, if you export GetScreenWidth/Height from C:
+                const width = Module._GetScreenWidth();
+                const height = Module._GetScreenHeight();
+                const canvas = Module.canvas;
+                canvas.width = width;
+                canvas.height = height;
+            }
+        };
+    </script>
+
+    {{{ SCRIPT }}}
+</body>
+
+</html>

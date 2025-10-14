@@ -33,8 +33,12 @@
     // internet connectivity.
     .dependencies = .{
         .raylib = .{
-            .url = "git+https://github.com/raysan5/raylib#9f831428e6be0eba8762a154e3e9139d4f071970",
-            .hash = "raylib-5.6.0-dev-whq8uL592gQ782dF95oci4S61qrNVYK3MhpUpNwFgZ1J",
+            .url = "git+https://github.com/raysan5/raylib#2d7b66dd374eb9d9d1b8bab58318ea8f292d7139",
+            .hash = "raylib-5.6.0-dev-whq8uMF92gSZCOcEBDmz3R6PR3MuAtBwRPtLfaP8ZLcc",
+        },
+        .emsdk = .{
+            .url = "git+https://github.com/emscripten-core/emsdk#f98ae68904e603f0f9fd91e6b50564274e43b843",
+            .hash = "N-V-__8AAIPoDwA71xo-fKz78T0BL-y_CD5vqAwmVUU52mHv",
         },
     },
     .paths = .{
