@@ -1,8 +1,3 @@
-src/main_old.zig
-src/piece_textures.zig
-src/constants.zig
-src/constatns_new.zig
-build_new.zig
 .zig-cache
 zig-out
 .DS_Store
