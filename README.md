@@ -18,19 +18,19 @@ A simple chess game implemented in Zig using the Raylib library for graphics ren
 
 ## Todo
 
-Important:
+**Important:**
 
-- [] Implement AI Opponent
-- [] Add move history and undo functionality
-- [] Fix stalemate detection
+- [ ] Implement AI Opponent
+- [ ] Add move history and undo functionality
+- [ ] Fix stalemate detection
 
 ---
 
-New Ideas for later:
+**New Ideas for later:**
 
-- [] Add assets for different themes (e.g., wood, marble)
-- [] Add sound effects for moves and captures
-- [] Add asset loading from external files
+- [ ] Add assets for different themes (e.g., wood, marble)
+- [ ] Add sound effects for moves and captures
+- [ ] Add asset loading from external files
 
 ## Requirements
 
