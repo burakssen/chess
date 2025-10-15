@@ -101,7 +101,9 @@ pub const Square = enum(u6) {
     h8,
 
     pub fn fromCoords(rank_: i8, file_: i8) Square {
-        return @enumFromInt(@as(i8, rank_) * 8 + file_);
+        const r = if (rank_ < 0) 0 else if (rank_ > 7) 7 else rank_;
+        const f = if (file_ < 0) 0 else if (file_ > 7) 7 else file_;
+        return @enumFromInt(@as(i8, r) * 8 + f);
     }
 
     pub fn toIndex(self: Square) u8 {
