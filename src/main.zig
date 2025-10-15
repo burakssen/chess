@@ -89,7 +89,24 @@ const App = struct {
             const drag = self.drag_state.?;
 
             if (InputHandler.getMouseSquare()) |to_square| {
-                const move = Move.init(drag.from, to_square);
+                var move = Move.init(drag.from, to_square);
+
+                const piece = drag.piece;
+                if (piece.getType() == .Pawn) {
+                    const to_rank = to_square.rank();
+                    const piece_color = piece.getColor();
+
+                    // White pawn reaching rank 8 or black pawn reaching rank 1
+                    if ((piece_color == .White and to_rank == 7) or
+                        (piece_color == .Black and to_rank == 0))
+                    {
+                        // This is a promotion move
+                        // TODO: Show promotion UI to let user choose piece
+                        // For now, default to queen promotion
+                        move.promotion = .Queen;
+                    }
+                }
+
                 self.game.makeMove(move) catch |err| {
                     std.debug.print("Invalid move: {}\n", .{err});
                 };
