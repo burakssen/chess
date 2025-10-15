@@ -60,7 +60,7 @@ A simple chess game implemented in Zig using the Raylib library for graphics ren
      zig build -Dtarget=wasm32-emscripten -Doptimize=ReleaseSafe
      ```
 
-     Open `zig-out/install/web/index.html` in a web browser.
+     Open `zig-out/install/web/` a web server (e.g., `python -m http.server`) and navigate to `http://localhost:8000/chess.html`.
 
 3. Run the compiled executable:
    ```bash
