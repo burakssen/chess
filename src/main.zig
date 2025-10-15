@@ -13,6 +13,13 @@ const constants = ui.constants;
 const core = @import("core");
 const Move = core.Move;
 const Square = core.Square;
+const Piece = core.Piece;
+const PieceType = core.types.PieceType;
+
+const PromotionState = struct {
+    move: Move,
+    piece: Piece,
+};
 
 const App = struct {
     game: ChessGame,
@@ -21,6 +28,7 @@ const App = struct {
     selected_square: ?Square,
     legal_moves_buffer: [256]Move,
     legal_moves_count: usize,
+    promotion_state: ?PromotionState,
 
     pub fn init(allocator: std.mem.Allocator) !App {
         rl.InitWindow(constants.WINDOW_WIDTH, constants.WINDOW_HEIGHT, "Chess");
@@ -33,6 +41,7 @@ const App = struct {
             .selected_square = null,
             .legal_moves_buffer = undefined,
             .legal_moves_count = 0,
+            .promotion_state = null,
         };
     }
 
@@ -43,6 +52,21 @@ const App = struct {
     }
 
     pub fn update(self: *App) !void {
+        // Handle promotion selection
+        if (self.promotion_state) |promo| {
+            if (InputHandler.isMousePressed()) {
+                if (self.getPromotionChoice()) |piece_type| {
+                    var move = promo.move;
+                    move.promotion = piece_type;
+                    self.game.makeMove(move) catch |err| {
+                        std.debug.print("Invalid promotion move: {}\n", .{err});
+                    };
+                    self.promotion_state = null;
+                }
+            }
+            return;
+        }
+
         // Handle reset
         if (InputHandler.isResetKeyPressed()) {
             try self.game.reset();
@@ -89,7 +113,7 @@ const App = struct {
             const drag = self.drag_state.?;
 
             if (InputHandler.getMouseSquare()) |to_square| {
-                var move = Move.init(drag.from, to_square);
+                const move = Move.init(drag.from, to_square);
 
                 const piece = drag.piece;
                 if (piece.getType() == .Pawn) {
@@ -100,10 +124,15 @@ const App = struct {
                     if ((piece_color == .White and to_rank == 7) or
                         (piece_color == .Black and to_rank == 0))
                     {
-                        // This is a promotion move
-                        // TODO: Show promotion UI to let user choose piece
-                        // For now, default to queen promotion
-                        move.promotion = .Queen;
+                        // Show promotion UI
+                        self.promotion_state = .{
+                            .move = move,
+                            .piece = piece,
+                        };
+                        self.drag_state = null;
+                        self.selected_square = null;
+                        self.legal_moves_count = 0;
+                        return;
                     }
                 }
 
@@ -116,6 +145,48 @@ const App = struct {
             self.selected_square = null;
             self.legal_moves_count = 0;
         }
+    }
+
+    fn getPromotionChoice(self: *App) ?PieceType {
+        const mouse_pos = InputHandler.getMousePosition();
+        _ = self.promotion_state orelse return null;
+
+        // Calculate promotion UI position (center of board)
+        const board_center_x = constants.BOARD_OFFSET_X + constants.SQUARE_SIZE * 4;
+        const board_center_y = constants.BOARD_OFFSET_Y + constants.SQUARE_SIZE * 4;
+
+        const box_width = constants.SQUARE_SIZE * 4;
+        const box_height = constants.SQUARE_SIZE * 1.5;
+        const piece_size = constants.SQUARE_SIZE;
+        const spacing = constants.SQUARE_SIZE;
+
+        const box_x = board_center_x - box_width / 2.0;
+        const box_y = board_center_y - box_height / 2.0;
+
+        // Check if mouse is in the promotion box
+        if (mouse_pos.x < box_x or mouse_pos.x > box_x + box_width or
+            mouse_pos.y < box_y or mouse_pos.y > box_y + box_height)
+        {
+            return null;
+        }
+
+        // Calculate which piece was clicked
+        const piece_y = box_y + (box_height - piece_size) / 2.0;
+        const start_x = box_x + spacing / 2;
+
+        const pieces = [_]PieceType{ .Queen, .Rook, .Bishop, .Knight };
+
+        for (pieces, 0..) |piece_type, i| {
+            const piece_x = start_x + @as(f32, @floatFromInt(i)) * spacing;
+
+            if (mouse_pos.x >= piece_x and mouse_pos.x <= piece_x + piece_size and
+                mouse_pos.y >= piece_y and mouse_pos.y <= piece_y + piece_size)
+            {
+                return piece_type;
+            }
+        }
+
+        return null;
     }
 
     pub fn render(self: *App) !void {
@@ -144,6 +215,11 @@ const App = struct {
             self.renderer.drawDraggedPiece(drag.piece, mouse_pos);
         }
 
+        // Draw promotion UI
+        if (self.promotion_state) |promo| {
+            self.drawPromotionUI(promo);
+        }
+
         // Draw game over overlay
         if (self.game.status != .ongoing) {
             const winner = if (self.game.status == .checkmate)
@@ -152,6 +228,58 @@ const App = struct {
                 null;
             self.renderer.drawGameOver(self.game.status, winner);
         }
+    }
+
+    fn drawPromotionUI(self: *App, promo: PromotionState) void {
+        // Calculate position (center of board)
+        const board_center_x = constants.BOARD_OFFSET_X + constants.SQUARE_SIZE * 4;
+        const board_center_y = constants.BOARD_OFFSET_Y + constants.SQUARE_SIZE * 4;
+
+        const box_width = @as(f32, @floatFromInt(constants.SQUARE_SIZE)) * 4.5;
+        const box_height = @as(f32, @floatFromInt(constants.SQUARE_SIZE)) * 1.5;
+        const piece_size = @as(f32, @floatFromInt(constants.SQUARE_SIZE)) * 0.8;
+        const spacing = box_width / 4.0;
+
+        // Fixed: Use float division consistently
+        const box_x = @as(f32, @floatFromInt(board_center_x)) - box_width / 2.0;
+        const box_y = @as(f32, @floatFromInt(board_center_y)) - box_height / 2.0;
+
+        // Draw semi-transparent overlay
+        rl.DrawRectangle(0, 0, constants.WINDOW_WIDTH, constants.WINDOW_HEIGHT, rl.Color{ .r = 0, .g = 0, .b = 0, .a = 180 });
+
+        // Draw promotion box
+        rl.DrawRectangle(@intFromFloat(box_x), @intFromFloat(box_y), @intFromFloat(box_width), @intFromFloat(box_height), rl.Color{ .r = 60, .g = 60, .b = 60, .a = 255 });
+
+        rl.DrawRectangleLines(@intFromFloat(box_x), @intFromFloat(box_y), @intFromFloat(box_width), @intFromFloat(box_height), rl.WHITE);
+
+        // Draw piece options
+        const pieces = [_]PieceType{ .Queen, .Rook, .Bishop, .Knight };
+        const piece_y = box_y + (box_height - piece_size) / 2.0;
+        const start_x = box_x + (spacing - piece_size) / 2.0;
+
+        for (pieces, 0..) |piece_type, i| {
+            const piece_x = start_x + @as(f32, @floatFromInt(i)) * spacing;
+
+            // Highlight on hover
+            const mouse_pos = InputHandler.getMousePosition();
+            if (mouse_pos.x >= piece_x and mouse_pos.x <= piece_x + piece_size and
+                mouse_pos.y >= piece_y and mouse_pos.y <= piece_y + piece_size)
+            {
+                rl.DrawRectangle(@intFromFloat(piece_x), @intFromFloat(piece_y), @intFromFloat(piece_size), @intFromFloat(piece_size), rl.Color{ .r = 100, .g = 100, .b = 100, .a = 255 });
+            }
+
+            // Draw piece
+            const piece = Piece.init(promo.piece.getColor(), piece_type);
+            self.renderer.drawPieceAt(piece, piece_x, piece_y, piece_size);
+        }
+
+        // Draw title text
+        const title = "Choose Promotion:";
+        const title_size: i32 = 24;
+        const title_width = rl.MeasureText(title, title_size);
+        const title_x = @as(i32, @intFromFloat(board_center_x)) - @divTrunc(title_width, 2);
+        const title_y = @as(i32, @intFromFloat(box_y - 40));
+        rl.DrawText(title, title_x, title_y, title_size, rl.WHITE);
     }
 
     pub fn run(self: *App) !void {

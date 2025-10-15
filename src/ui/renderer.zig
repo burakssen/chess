@@ -185,6 +185,36 @@ pub const Renderer = struct {
             );
         }
     }
+
+    pub fn drawPieceAt(self: *Renderer, piece: Piece, x: f32, y: f32, size: f32) void {
+        if (self.assets.getTexture(piece)) |texture| {
+            const scale = size / @as(f32, @floatFromInt(texture.width));
+            // The texture will be scaled to 'size', so just draw at x, y
+            const position = rl.Vector2{
+                .x = x,
+                .y = y,
+            };
+            rl.DrawTextureEx(
+                texture,
+                position,
+                0.0,
+                scale,
+                rl.WHITE,
+            );
+        } else {
+            // Fallback: draw text symbol centered
+            const symbol_ptr: [*c]const u8 = @ptrCast(piece.symbol().ptr);
+            const text_size: i32 = 40;
+            const text_width = rl.MeasureText(symbol_ptr, text_size);
+            rl.DrawText(
+                symbol_ptr,
+                @intFromFloat(x + (size - @as(f32, @floatFromInt(text_width))) / 2.0),
+                @intFromFloat(y + (size - @as(f32, @floatFromInt(text_size))) / 2.0),
+                text_size,
+                rl.RED,
+            );
+        }
+    }
 };
 
 fn squareToScreen(square: Square) rl.Vector2 {
