@@ -48,9 +48,19 @@ A simple chess game implemented in Zig using the Raylib library for graphics ren
 
 2. Build the project using Zig's build system:
 
-   ```bash
-   zig build
-   ```
+   - For desktop:
+
+     ```bash
+     zig build run
+     ```
+
+   - For web (requires Emscripten):
+
+     ```bash
+     zig build -Dtarget=wasm32-emscripten -Doptimize=ReleaseSafe
+     ```
+
+     Open `zig-out/install/web/index.html` in a web browser.
 
 3. Run the compiled executable:
    ```bash
