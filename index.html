@@ -4,42 +4,57 @@
 <head>
     <meta charset="utf-8">
     <title>Raylib Web App</title>
-    <script src="https://cdn.tailwindcss.com"></script>
     <style>
+        body {
+            margin: 0;
+            background: #111;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
         canvas.emscripten {
             border: 1px solid #333;
             outline: none;
             image-rendering: optimizeQuality;
+            width: auto;
+            height: auto;
+        }
+
+        button {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #333;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
         }
     </style>
 </head>
 
-<body class="h-screen w-screen bg-gray-900 flex overflow-hidden">
-    <!-- Side panel -->
-    <div class="w-64 bg-gray-800 p-4 flex flex-col gap-4">
-        <h2 class="text-white text-xl font-bold mb-4">Controls</h2>
-        <button onclick="window.location.href='https://burakssen.com'"
-            class="bg-gray-700 hover:bg-gray-600 text-white py-2 px-4 rounded">Go Back</button>
-        <button class="bg-gray-700 hover:bg-gray-600 text-white py-2 px-4 rounded">Button 2</button>
-        <button class="bg-gray-700 hover:bg-gray-600 text-white py-2 px-4 rounded">Button 3</button>
-        <!-- Add more buttons here -->
-    </div>
-
-    <!-- Main canvas area -->
-    <div class="flex-1 flex justify-center items-center relative">
-        <canvas id="canvas" class="emscripten" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
-    </div>
+<body>
+    <canvas id="canvas" class="emscripten" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
 
     <script>
-        // Configure the Emscripten Module before loading raylib
+        // Configure the Emscripten Module before loading chess.js
         var Module = {
-            canvas: document.getElementById('canvas'),
+            canvas: (function () {
+                const canvas = document.getElementById('canvas');
+                return canvas;
+            })(),
             print: (text) => console.log(text),
             printErr: (text) => console.error(text),
 
-            // Runs once the runtime and raylib are initialized
+            // This runs once the runtime and raylib are initialized
             onRuntimeInitialized() {
                 console.log("Raylib WebAssembly initialized!");
+                // Query the raylib window size via exported C functions if you want
+                // For example, if you export GetScreenWidth/Height from C:
                 const width = Module._GetScreenWidth();
                 const height = Module._GetScreenHeight();
                 const canvas = Module.canvas;
@@ -50,6 +65,8 @@
     </script>
 
     {{{ SCRIPT }}}
+
+    <button onclick="window.location.href='https://burakssen.com'">Go Back</button>
 </body>
 
 </html>
