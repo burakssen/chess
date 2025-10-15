@@ -16,6 +16,22 @@ A simple chess game implemented in Zig using the Raylib library for graphics ren
 - Highlighting of selected pieces and possible moves.
 - Check and checkmate detection.
 
+## Todo
+
+Important:
+
+- [] Implement AI Opponent
+- [] Add move history and undo functionality
+- [] Fix stalemate detection
+
+---
+
+New Ideas for later:
+
+- [] Add assets for different themes (e.g., wood, marble)
+- [] Add sound effects for moves and captures
+- [] Add asset loading from external files
+
 ## Requirements
 
 - Zig programming language (version 0.15.1 or later)
