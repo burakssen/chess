@@ -2,6 +2,9 @@
 
 A simple chess game implemented in Zig using the Raylib library for graphics rendering.
 
+You can check out the project here without needing to build it yourself:
+[burakssen.com/chess](https://burakssen.com/chess/)
+
 ## Overview
 
 |                      |                           |                           |
