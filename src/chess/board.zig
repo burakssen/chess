@@ -173,10 +173,15 @@ fn isMovePseudoLegalInternal(self: *const Board, move: Move, color: Color) bool 
 
                 for (between_files) |f| {
                     if (!self.getPiece(Square.fromCoords(fr, f)).isEmpty()) break :blk false;
+                    const sq = Square.fromCoords(fr, f);
+                    if (!self.getPiece(sq).isEmpty()) break :blk false;
+                    const is_under_attack = self.isSquareAttacked(sq, piece.getColor().opposite()) catch break :blk false;
+                    if (is_under_attack) break :blk false;
                 }
 
                 break :blk self.castling_rights.canCastle(piece.getColor(), is_kingside);
             }
+
             break :blk false;
         },
         else => false,
@@ -240,7 +245,7 @@ pub fn makeMove(self: *Board, move: Move) !void {
 
     const piece_type = piece.getType();
 
-    // Execute the move
+    const captured_piece = self.getPiece(move.to);
     try self.makeMoveUnchecked(move);
 
     // Update castling rights after the move
@@ -252,6 +257,15 @@ pub fn makeMove(self: *Board, move: Move) !void {
             self.castling_rights.removeRights(self.active_color, false);
         } else if (move.from == Square.h1 or move.from == Square.h8) {
             self.castling_rights.removeRights(self.active_color, true);
+        }
+    }
+
+    // If a rook was captured
+    if (!captured_piece.isEmpty() and captured_piece.getType() == .Rook) {
+        if (move.to == Square.a1 or move.to == Square.a8) {
+            self.castling_rights.removeRights(self.active_color.opposite(), false);
+        } else if (move.to == Square.h1 or move.to == Square.h8) {
+            self.castling_rights.removeRights(self.active_color.opposite(), true);
         }
     }
 
