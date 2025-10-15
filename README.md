@@ -54,7 +54,7 @@ A simple chess game implemented in Zig using the Raylib library for graphics ren
      zig build run
      ```
 
-   - For web (requires Emscripten):
+   - For web (It fetches emscripten):
 
      ```bash
      zig build -Dtarget=wasm32-emscripten -Doptimize=ReleaseSafe
