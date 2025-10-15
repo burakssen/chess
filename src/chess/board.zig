@@ -168,6 +168,10 @@ fn isMovePseudoLegalInternal(self: *const Board, move: Move, color: Color) bool 
             if (@abs(rd) <= 1 and @abs(fd) <= 1) break :blk true;
 
             if (fr == tr and @abs(fd) == 2) {
+                // Castling
+                if (self.is_check) break :blk false;
+                if (!self.pathClear(move.from, move.to)) break :blk false;
+
                 const is_kingside = tf > ff;
                 const between_files: []const i8 = if (is_kingside) &.{ 5, 6 } else &.{ 1, 2, 3 };
 
