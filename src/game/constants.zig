@@ -2,7 +2,7 @@ const rl = @import("raylib.zig").rl;
 
 pub const WINDOW_WIDTH = 800;
 pub const WINDOW_HEIGHT = 800;
-pub const BOARD_SIZE = 640;
+pub const BOARD_SIZE = 780;
 pub const BOARD_OFFSET_X = (WINDOW_WIDTH - BOARD_SIZE) / 2;
 pub const BOARD_OFFSET_Y = (WINDOW_HEIGHT - BOARD_SIZE) / 2;
 pub const SQUARE_SIZE = BOARD_SIZE / 8;
