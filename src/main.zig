@@ -151,28 +151,27 @@ const App = struct {
         const mouse_pos = InputHandler.getMousePosition();
         _ = self.promotion_state orelse return null;
 
-        // Calculate promotion UI position (center of board)
-        const board_center_x = constants.BOARD_OFFSET_X + constants.SQUARE_SIZE * 4;
-        const board_center_y = constants.BOARD_OFFSET_Y + constants.SQUARE_SIZE * 4;
+        // Use the same center + sizing logic as drawPromotionUI so hitbox matches visuals
+        const board_center_x_i = constants.BOARD_OFFSET_X + constants.SQUARE_SIZE * 4;
+        const board_center_y_i = constants.BOARD_OFFSET_Y + constants.SQUARE_SIZE * 4;
 
-        const box_width = constants.SQUARE_SIZE * 4;
-        const box_height = constants.SQUARE_SIZE * 1.5;
-        const piece_size = constants.SQUARE_SIZE;
-        const spacing = constants.SQUARE_SIZE;
+        const box_width = @as(f32, @floatFromInt(constants.SQUARE_SIZE)) * 4.5;
+        const box_height = @as(f32, @floatFromInt(constants.SQUARE_SIZE)) * 1.5;
+        const piece_size = @as(f32, @floatFromInt(constants.SQUARE_SIZE)) * 0.8;
+        const spacing = box_width / 4.0;
 
-        const box_x = board_center_x - box_width / 2.0;
-        const box_y = board_center_y - box_height / 2.0;
+        const box_x = @as(f32, @floatFromInt(board_center_x_i)) - box_width / 2.0;
+        const box_y = @as(f32, @floatFromInt(board_center_y_i)) - box_height / 2.0;
 
-        // Check if mouse is in the promotion box
+        // Quick reject if mouse outside the promotion box
         if (mouse_pos.x < box_x or mouse_pos.x > box_x + box_width or
             mouse_pos.y < box_y or mouse_pos.y > box_y + box_height)
         {
             return null;
         }
 
-        // Calculate which piece was clicked
         const piece_y = box_y + (box_height - piece_size) / 2.0;
-        const start_x = box_x + spacing / 2;
+        const start_x = box_x + (spacing - piece_size) / 2.0;
 
         const pieces = [_]PieceType{ .Queen, .Rook, .Bishop, .Knight };
 
