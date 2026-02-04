@@ -67,6 +67,7 @@ const App = struct {
     menu_selection: MenuSelection,
 
     pub fn init(allocator: std.mem.Allocator) !App {
+        rl.SetConfigFlags(rl.FLAG_WINDOW_HIGHDPI);
         rl.InitWindow(constants.WINDOW_WIDTH, constants.WINDOW_HEIGHT, "Chess");
         rl.SetTargetFPS(60);
 

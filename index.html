@@ -17,9 +17,13 @@
         canvas.emscripten {
             border: 1px solid #333;
             outline: none;
-            image-rendering: optimizeQuality;
-            width: auto;
-            height: auto;
+            /* Better rendering for crispness */
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: crisp-edges;
+            image-rendering: pixelated;
+            /* Control size via CSS for high-DPI */
+            width: 800px;
+            height: 800px;
         }
 
         button {
@@ -53,13 +57,22 @@
             // This runs once the runtime and raylib are initialized
             onRuntimeInitialized() {
                 console.log("Raylib WebAssembly initialized!");
-                // Query the raylib window size via exported C functions if you want
-                // For example, if you export GetScreenWidth/Height from C:
+                
+                // Handle high-DPI scaling
+                const dpr = window.devicePixelRatio || 1;
+                const canvas = Module.canvas;
+                
+                // Get the size Raylib thinks it is
                 const width = Module._GetScreenWidth();
                 const height = Module._GetScreenHeight();
-                const canvas = Module.canvas;
-                canvas.width = width;
-                canvas.height = height;
+                
+                // Update canvas attributes for physical pixels
+                canvas.width = width * dpr;
+                canvas.height = height * dpr;
+                
+                // CSS size remains the logical size
+                canvas.style.width = width + "px";
+                canvas.style.height = height + "px";
             }
         };
     </script>

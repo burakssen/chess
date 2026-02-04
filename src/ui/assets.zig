@@ -37,7 +37,7 @@ pub const AssetManager = struct {
 
             const texture = rl.LoadTexture(path.ptr);
             if (texture.id > 0) {
-                rl.SetTextureFilter(texture, rl.TEXTURE_FILTER_BILINEAR);
+                rl.SetTextureFilter(texture, rl.TEXTURE_FILTER_POINT);
                 self.textures[value] = texture;
             }
         }
