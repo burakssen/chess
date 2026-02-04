@@ -96,19 +96,33 @@ pub const Rules = struct {
 
         // Castling
         if (fr == tr and @abs(fd) == 2) {
+            const color = piece.getColor();
+
+            // Cannot castle out of check
+            if (isSquareAttacked(board, move.from, color.opposite())) return false;
+
             if (!board.pathClear(move.from, move.to)) return false;
 
             const is_kingside = tf > ff;
-            const between_files: []const i8 = if (is_kingside) &.{ 5, 6 } else &.{ 1, 2, 3 };
 
-            // Check if squares are empty and not attacked
+            // Check castling rights
+            if (!board.castling_rights.canCastle(color, is_kingside)) return false;
+
+            // Check if the squares between king and rook are empty
+            const between_files: []const i8 = if (is_kingside) &.{ 5, 6 } else &.{ 1, 2, 3 };
             for (between_files) |f| {
                 const sq = Square.fromCoords(fr, f);
                 if (!board.getPiece(sq).isEmpty()) return false;
-                if (isSquareAttacked(board, sq, piece.getColor().opposite())) return false;
             }
 
-            return board.castling_rights.canCastle(piece.getColor(), is_kingside);
+            // Check if king passes through or ends on attacked square
+            const transit_files: []const i8 = if (is_kingside) &.{ 5, 6 } else &.{ 2, 3 };
+            for (transit_files) |f| {
+                const sq = Square.fromCoords(fr, f);
+                if (isSquareAttacked(board, sq, color.opposite())) return false;
+            }
+
+            return true;
         }
 
         return false;

@@ -23,6 +23,16 @@ pub fn build(b: *std.Build) !void {
         .imports = &.{.{ .name = "core", .module = core }},
     });
 
+    const ai = b.createModule(.{
+        .root_source_file = b.path("src/ai/ai.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "core", .module = core },
+            .{ .name = "engine", .module = engine },
+        },
+    });
+
     const ui = b.createModule(.{
         .root_source_file = b.path("src/ui/ui.zig"),
         .target = target,
@@ -40,6 +50,7 @@ pub fn build(b: *std.Build) !void {
         .imports = &.{
             .{ .name = "core", .module = core },
             .{ .name = "engine", .module = engine },
+            .{ .name = "ai", .module = ai },
             .{ .name = "ui", .module = ui },
         },
     });

@@ -19,20 +19,25 @@ pub const MoveGenerator = struct {
     }
 
     pub fn generateLegalMoves(self: *MoveGenerator, board: *const Board) []const Move {
-        self.count = 0;
+        self.reset();
 
         for (0..64) |i| {
             const from_sq = Square.fromIndex(@intCast(i));
             const piece = board.getPiece(from_sq);
             if (piece.isEmpty() or piece.getColor() != board.active_color) continue;
 
-            _ = self.generateMovesForPiece(board, from_sq);
+            _ = self.generateMovesForPieceInternal(board, from_sq);
         }
 
         return self.buffer[0..self.count];
     }
 
     pub fn generateMovesForPiece(self: *MoveGenerator, board: *const Board, square: Square) []const Move {
+        self.reset();
+        return self.generateMovesForPieceInternal(board, square);
+    }
+
+    fn generateMovesForPieceInternal(self: *MoveGenerator, board: *const Board, square: Square) []const Move {
         const start_count = self.count;
 
         const piece = board.getPiece(square);

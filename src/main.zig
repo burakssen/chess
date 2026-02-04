@@ -4,95 +4,170 @@ const rl = @import("ui").rl;
 
 const engine = @import("engine");
 const ChessGame = engine.ChessGame;
+const GameMode = engine.GameMode;
 const ui = @import("ui");
 const Renderer = ui.Renderer;
 const DragState = ui.DragState;
 const InputHandler = ui.InputHandler;
 const constants = ui.constants;
 
+const ai = @import("ai");
+const AIPlayer = ai.AIPlayer;
+const AIDifficulty = ai.AIDifficulty;
+
 const core = @import("core");
 const Move = core.Move;
 const Square = core.Square;
 const Piece = core.Piece;
 const PieceType = core.types.PieceType;
+const Color = core.types.Color;
 
 const PromotionState = struct {
     move: Move,
     piece: Piece,
 };
 
+const MenuState = enum {
+    main_menu,
+    difficulty_select,
+    playing,
+};
+
+const MenuSelection = struct {
+    game_mode: GameMode,
+    difficulty: AIDifficulty,
+    selected_mode_index: usize,
+    selected_difficulty_index: usize,
+
+    pub fn init() MenuSelection {
+        return .{
+            .game_mode = .human_vs_computer,
+            .difficulty = .medium,
+            .selected_mode_index = 1,
+            .selected_difficulty_index = 1,
+        };
+    }
+};
+
 const App = struct {
-    game: ChessGame,
-    renderer: Renderer,
+    allocator: std.mem.Allocator,
+    game: ?ChessGame,
+    renderer: ?Renderer,
     drag_state: ?DragState,
     selected_square: ?Square,
     legal_moves_buffer: [256]Move,
     legal_moves_count: usize,
     promotion_state: ?PromotionState,
+    ai_player: ?AIPlayer,
+    ai_move_delay: u32,
+    ai_move_timer: u32,
+    menu_state: MenuState,
+    menu_selection: MenuSelection,
 
     pub fn init(allocator: std.mem.Allocator) !App {
         rl.InitWindow(constants.WINDOW_WIDTH, constants.WINDOW_HEIGHT, "Chess");
         rl.SetTargetFPS(60);
 
         return .{
-            .game = try ChessGame.init(allocator),
-            .renderer = try Renderer.init(allocator),
+            .allocator = allocator,
+            .game = null,
+            .renderer = null,
             .drag_state = null,
             .selected_square = null,
             .legal_moves_buffer = undefined,
             .legal_moves_count = 0,
             .promotion_state = null,
+            .ai_player = null,
+            .ai_move_delay = 30,
+            .ai_move_timer = 0,
+            .menu_state = .main_menu,
+            .menu_selection = MenuSelection.init(),
         };
     }
 
+    fn startGame(self: *App) !void {
+        const mode = self.menu_selection.game_mode;
+        const difficulty = self.menu_selection.difficulty;
+
+        const needs_ai = mode != .human_vs_human;
+        const human_color: Color = switch (mode) {
+            .human_vs_human => .White,
+            .human_vs_computer => .White,
+            .computer_vs_human => .Black,
+            .computer_vs_computer => .White,
+        };
+
+        self.game = try ChessGame.initWithMode(self.allocator, mode, human_color);
+        self.renderer = try Renderer.init(self.allocator);
+        self.ai_player = if (needs_ai) AIPlayer.init(difficulty) else null;
+        self.menu_state = .playing;
+    }
+
     pub fn deinit(self: *App) void {
-        self.game.deinit();
-        self.renderer.deinit();
+        if (self.game) |*game| game.deinit();
+        if (self.renderer) |*renderer| renderer.deinit();
         rl.CloseWindow();
     }
 
     pub fn update(self: *App) !void {
+        // Handle menu states
+        switch (self.menu_state) {
+            .main_menu => {
+                self.updateMainMenu();
+                return;
+            },
+            .difficulty_select => {
+                try self.updateDifficultyMenu();
+                return;
+            },
+            .playing => {},
+        }
+
+        var game = &(self.game orelse return);
+
         // Handle promotion selection
         if (self.promotion_state) |promo| {
             if (InputHandler.isMousePressed()) {
                 if (self.getPromotionChoice()) |piece_type| {
                     var move = promo.move;
                     move.promotion = piece_type;
-                    self.game.makeMove(move) catch |err| {
+                    game.makeMove(move) catch |err| {
                         std.debug.print("Invalid promotion move: {}\n", .{err});
                     };
                     self.promotion_state = null;
+                    self.ai_move_timer = 0;
                 }
             }
             return;
         }
 
-        // Handle reset
+        // Handle reset (back to menu)
         if (InputHandler.isResetKeyPressed()) {
-            try self.game.reset();
-            self.drag_state = null;
-            self.selected_square = null;
-            self.legal_moves_count = 0;
+            self.returnToMenu();
             return;
         }
 
-        // If game is over, click to reset
-        if (self.game.status != .ongoing) {
+        // If game is over, click to go back to menu
+        if (game.status != .ongoing) {
             if (InputHandler.isMousePressed()) {
-                try self.game.reset();
-                self.drag_state = null;
-                self.selected_square = null;
-                self.legal_moves_count = 0;
+                self.returnToMenu();
             }
             return;
         }
 
-        // Handle mouse press
+        // Handle AI moves
+        if (game.isComputerTurn()) {
+            try self.handleAIMove();
+            return;
+        }
+
+        // Handle mouse press (human player)
         if (InputHandler.isMousePressed()) {
             if (InputHandler.getMouseSquare()) |square| {
-                const piece = self.game.board.getPiece(square);
+                const piece = game.board.getPiece(square);
 
-                if (!piece.isEmpty() and piece.getColor() == self.game.board.active_color) {
+                // Only allow human to move their own pieces
+                if (!piece.isEmpty() and piece.getColor() == game.board.active_color and game.isHumanTurn()) {
                     // Start dragging
                     self.drag_state = .{
                         .piece = piece,
@@ -101,7 +176,7 @@ const App = struct {
                     self.selected_square = square;
 
                     // Get legal moves for this piece
-                    const moves = self.game.getLegalMovesForPiece(square);
+                    const moves = game.getLegalMovesForPiece(square);
                     self.legal_moves_count = moves.len;
                     @memcpy(self.legal_moves_buffer[0..moves.len], moves);
                 }
@@ -113,8 +188,6 @@ const App = struct {
             const drag = self.drag_state.?;
 
             if (InputHandler.getMouseSquare()) |to_square| {
-                const move = Move.init(drag.from, to_square);
-
                 const piece = drag.piece;
                 if (piece.getType() == .Pawn) {
                     const to_rank = to_square.rank();
@@ -124,27 +197,179 @@ const App = struct {
                     if ((piece_color == .White and to_rank == 7) or
                         (piece_color == .Black and to_rank == 0))
                     {
-                        // Show promotion UI
-                        self.promotion_state = .{
-                            .move = move,
-                            .piece = piece,
-                        };
-                        self.drag_state = null;
-                        self.selected_square = null;
-                        self.legal_moves_count = 0;
-                        return;
+                        // Validate that at least one promotion move is legal
+                        const test_move = Move.withPromotion(drag.from, to_square, .Queen);
+                        if (self.isMoveLegalFromBuffer(test_move)) {
+                            // Show promotion UI
+                            self.promotion_state = .{
+                                .move = Move.init(drag.from, to_square),
+                                .piece = piece,
+                            };
+                            self.drag_state = null;
+                            self.selected_square = null;
+                            self.legal_moves_count = 0;
+                            return;
+                        }
                     }
                 }
 
-                self.game.makeMove(move) catch |err| {
+                const move = Move.init(drag.from, to_square);
+                if (game.makeMove(move)) |_| {
+                    self.ai_move_timer = 0; // Reset AI timer after human move
+                } else |err| {
                     std.debug.print("Invalid move: {}\n", .{err});
-                };
+                }
             }
 
             self.drag_state = null;
             self.selected_square = null;
             self.legal_moves_count = 0;
         }
+    }
+
+    fn returnToMenu(self: *App) void {
+        if (self.game) |*game| {
+            game.deinit();
+            self.game = null;
+        }
+        if (self.renderer) |*renderer| {
+            renderer.deinit();
+            self.renderer = null;
+        }
+        self.drag_state = null;
+        self.selected_square = null;
+        self.legal_moves_count = 0;
+        self.promotion_state = null;
+        self.ai_player = null;
+        self.ai_move_timer = 0;
+        self.menu_state = .main_menu;
+    }
+
+    fn updateMainMenu(self: *App) void {
+        const mouse_pos = InputHandler.getMousePosition();
+        const center_x = @as(f32, @floatFromInt(constants.WINDOW_WIDTH)) / 2.0;
+        const start_y: f32 = 250;
+        const button_width: f32 = 300;
+        const button_height: f32 = 60;
+        const button_spacing: f32 = 20;
+
+        const modes = [_]struct { mode: GameMode, label: [*c]const u8 }{
+            .{ .mode = .human_vs_human, .label = "Player vs Player" },
+            .{ .mode = .human_vs_computer, .label = "Player vs Computer" },
+            .{ .mode = .computer_vs_human, .label = "Computer vs Player" },
+            .{ .mode = .computer_vs_computer, .label = "Computer vs Computer" },
+        };
+
+        if (InputHandler.isMousePressed()) {
+            for (modes, 0..) |m, i| {
+                const button_y = start_y + @as(f32, @floatFromInt(i)) * (button_height + button_spacing);
+                const button_x = center_x - button_width / 2.0;
+
+                if (mouse_pos.x >= button_x and mouse_pos.x <= button_x + button_width and
+                    mouse_pos.y >= button_y and mouse_pos.y <= button_y + button_height)
+                {
+                    self.menu_selection.game_mode = m.mode;
+                    self.menu_selection.selected_mode_index = i;
+
+                    if (m.mode == .human_vs_human) {
+                        // No difficulty needed, start game directly
+                        self.startGame() catch |err| {
+                            std.debug.print("Failed to start game: {}\n", .{err});
+                        };
+                    } else {
+                        // Go to difficulty selection
+                        self.menu_state = .difficulty_select;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    fn updateDifficultyMenu(self: *App) !void {
+        const mouse_pos = InputHandler.getMousePosition();
+        const center_x = @as(f32, @floatFromInt(constants.WINDOW_WIDTH)) / 2.0;
+        const start_y: f32 = 280;
+        const button_width: f32 = 250;
+        const button_height: f32 = 60;
+        const button_spacing: f32 = 20;
+
+        const difficulties = [_]struct { diff: AIDifficulty, label: [*c]const u8 }{
+            .{ .diff = .easy, .label = "Easy" },
+            .{ .diff = .medium, .label = "Medium" },
+            .{ .diff = .hard, .label = "Hard" },
+            .{ .diff = .impossible, .label = "Impossible" },
+        };
+
+        // Handle back button (Escape or R key)
+        if (rl.IsKeyPressed(rl.KEY_ESCAPE) or rl.IsKeyPressed(rl.KEY_BACKSPACE)) {
+            self.menu_state = .main_menu;
+            return;
+        }
+
+        if (InputHandler.isMousePressed()) {
+            // Check back button
+            const back_y: f32 = start_y + 3 * (button_height + button_spacing) + 20;
+            const back_width: f32 = 150;
+            const back_x = center_x - back_width / 2.0;
+
+            if (mouse_pos.x >= back_x and mouse_pos.x <= back_x + back_width and
+                mouse_pos.y >= back_y and mouse_pos.y <= back_y + button_height)
+            {
+                self.menu_state = .main_menu;
+                return;
+            }
+
+            // Check difficulty buttons
+            for (difficulties, 0..) |d, i| {
+                const button_y = start_y + @as(f32, @floatFromInt(i)) * (button_height + button_spacing);
+                const button_x = center_x - button_width / 2.0;
+
+                if (mouse_pos.x >= button_x and mouse_pos.x <= button_x + button_width and
+                    mouse_pos.y >= button_y and mouse_pos.y <= button_y + button_height)
+                {
+                    self.menu_selection.difficulty = d.diff;
+                    self.menu_selection.selected_difficulty_index = i;
+                    try self.startGame();
+                    break;
+                }
+            }
+        }
+    }
+
+    fn handleAIMove(self: *App) !void {
+        var game = &(self.game orelse return);
+
+        // Add delay before AI moves
+        if (self.ai_move_timer < self.ai_move_delay) {
+            self.ai_move_timer += 1;
+            return;
+        }
+
+        if (self.ai_player) |*ai_player| {
+            const legal_moves = game.getLegalMoves();
+            if (ai_player.selectMove(&game.board, legal_moves)) |move| {
+                try game.makeMove(move);
+                self.ai_move_timer = 0;
+            }
+        }
+    }
+
+    fn isMoveLegalFromBuffer(self: *App, move: Move) bool {
+        for (self.legal_moves_buffer[0..self.legal_moves_count]) |legal_move| {
+            if (legal_move.from == move.from and legal_move.to == move.to) {
+                // For promotions, also check the promotion type matches
+                if (move.promotion != null and legal_move.promotion != null) {
+                    if (move.promotion == legal_move.promotion) return true;
+                } else if (move.promotion == null and legal_move.promotion == null) {
+                    return true;
+                } else if (move.promotion != null and legal_move.promotion != null) {
+                    // If checking any promotion, just return true
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     fn getPromotionChoice(self: *App) ?PieceType {
@@ -189,29 +414,45 @@ const App = struct {
     }
 
     pub fn render(self: *App) !void {
-        self.renderer.beginFrame();
-        defer self.renderer.endFrame();
+        rl.BeginDrawing();
+        defer rl.EndDrawing();
+        rl.ClearBackground(rl.Color{ .r = 40, .g = 40, .b = 40, .a = 255 });
+
+        switch (self.menu_state) {
+            .main_menu => {
+                self.drawMainMenu();
+                return;
+            },
+            .difficulty_select => {
+                self.drawDifficultyMenu();
+                return;
+            },
+            .playing => {},
+        }
+
+        const renderer = &(self.renderer orelse return);
+        const game = &(self.game orelse return);
 
         // Draw board
-        self.renderer.drawBoard();
+        renderer.drawBoard();
 
         // Highlight selected square
         if (self.selected_square) |square| {
-            self.renderer.drawSelectedSquare(square);
+            renderer.drawSelectedSquare(square);
         }
 
         // Draw legal move indicators
         if (self.legal_moves_count > 0) {
-            self.renderer.drawLegalMoves(&self.game.board, self.legal_moves_buffer[0..self.legal_moves_count]);
+            renderer.drawLegalMoves(&game.board, self.legal_moves_buffer[0..self.legal_moves_count]);
         }
 
         // Draw pieces
-        self.renderer.drawPieces(&self.game.board, self.drag_state);
+        renderer.drawPieces(&game.board, self.drag_state);
 
         // Draw dragged piece
         if (self.drag_state) |drag| {
             const mouse_pos = InputHandler.getMousePosition();
-            self.renderer.drawDraggedPiece(drag.piece, mouse_pos);
+            renderer.drawDraggedPiece(drag.piece, mouse_pos);
         }
 
         // Draw promotion UI
@@ -220,16 +461,151 @@ const App = struct {
         }
 
         // Draw game over overlay
-        if (self.game.status != .ongoing) {
-            const winner = if (self.game.status == .checkmate)
-                self.game.board.active_color.opposite()
+        if (game.status != .ongoing) {
+            const winner = if (game.status == .checkmate)
+                game.board.active_color.opposite()
             else
                 null;
-            self.renderer.drawGameOver(self.game.status, winner);
+            renderer.drawGameOver(game.status, winner);
         }
     }
 
+    fn drawMainMenu(self: *App) void {
+        _ = self;
+        const center_x = @as(f32, @floatFromInt(constants.WINDOW_WIDTH)) / 2.0;
+        const start_y: f32 = 250;
+        const button_width: f32 = 300;
+        const button_height: f32 = 60;
+        const button_spacing: f32 = 20;
+
+        // Draw title
+        const title = "CHESS";
+        const title_size: i32 = 72;
+        const title_width = rl.MeasureText(title, title_size);
+        const title_x = @divTrunc(constants.WINDOW_WIDTH - title_width, 2);
+        rl.DrawText(title, title_x + 3, 103, title_size, rl.BLACK);
+        rl.DrawText(title, title_x, 100, title_size, rl.GOLD);
+
+        // Draw subtitle
+        const subtitle = "Select Game Mode";
+        const subtitle_size: i32 = 28;
+        const subtitle_width = rl.MeasureText(subtitle, subtitle_size);
+        const subtitle_x = @divTrunc(constants.WINDOW_WIDTH - subtitle_width, 2);
+        rl.DrawText(subtitle, subtitle_x, 190, subtitle_size, rl.WHITE);
+
+        const modes = [_][*c]const u8{
+            "Player vs Player",
+            "Player vs Computer",
+            "Computer vs Player",
+            "Computer vs Computer",
+        };
+
+        const mouse_pos = InputHandler.getMousePosition();
+
+        for (modes, 0..) |label, i| {
+            const button_y = start_y + @as(f32, @floatFromInt(i)) * (button_height + button_spacing);
+            const button_x = center_x - button_width / 2.0;
+
+            // Check hover
+            const is_hovered = mouse_pos.x >= button_x and mouse_pos.x <= button_x + button_width and
+                mouse_pos.y >= button_y and mouse_pos.y <= button_y + button_height;
+
+            const bg_color = if (is_hovered) rl.Color{ .r = 80, .g = 80, .b = 120, .a = 255 } else rl.Color{ .r = 60, .g = 60, .b = 80, .a = 255 };
+            const border_color = if (is_hovered) rl.GOLD else rl.WHITE;
+
+            rl.DrawRectangle(@intFromFloat(button_x), @intFromFloat(button_y), @intFromFloat(button_width), @intFromFloat(button_height), bg_color);
+            rl.DrawRectangleLinesEx(rl.Rectangle{ .x = button_x, .y = button_y, .width = button_width, .height = button_height }, 2.0, border_color);
+
+            const text_size: i32 = 24;
+            const text_width = rl.MeasureText(label, text_size);
+            const text_x = @as(i32, @intFromFloat(button_x + button_width / 2.0)) - @divTrunc(text_width, 2);
+            const text_y = @as(i32, @intFromFloat(button_y + button_height / 2.0)) - @divTrunc(text_size, 2);
+            rl.DrawText(label, text_x, text_y, text_size, rl.WHITE);
+        }
+    }
+
+    fn drawDifficultyMenu(self: *App) void {
+        _ = self;
+        const center_x = @as(f32, @floatFromInt(constants.WINDOW_WIDTH)) / 2.0;
+        const start_y: f32 = 280;
+        const button_width: f32 = 250;
+        const button_height: f32 = 60;
+        const button_spacing: f32 = 20;
+
+        // Draw title
+        const title = "Select Difficulty";
+        const title_size: i32 = 48;
+        const title_width = rl.MeasureText(title, title_size);
+        const title_x = @divTrunc(constants.WINDOW_WIDTH - title_width, 2);
+        rl.DrawText(title, title_x + 2, 152, title_size, rl.BLACK);
+        rl.DrawText(title, title_x, 150, title_size, rl.GOLD);
+
+        const difficulties = [_]struct { label: [*c]const u8, desc: [*c]const u8 }{
+            .{ .label = "Easy", .desc = "Random moves" },
+            .{ .label = "Medium", .desc = "Basic strategy" },
+            .{ .label = "Hard", .desc = "Advanced tactics" },
+        };
+
+        const mouse_pos = InputHandler.getMousePosition();
+
+        for (difficulties, 0..) |d, i| {
+            const button_y = start_y + @as(f32, @floatFromInt(i)) * (button_height + button_spacing);
+            const button_x = center_x - button_width / 2.0;
+
+            const is_hovered = mouse_pos.x >= button_x and mouse_pos.x <= button_x + button_width and
+                mouse_pos.y >= button_y and mouse_pos.y <= button_y + button_height;
+
+            const bg_color = if (is_hovered) rl.Color{ .r = 80, .g = 100, .b = 80, .a = 255 } else rl.Color{ .r = 60, .g = 80, .b = 60, .a = 255 };
+            const border_color = if (is_hovered) rl.GOLD else rl.WHITE;
+
+            rl.DrawRectangle(@intFromFloat(button_x), @intFromFloat(button_y), @intFromFloat(button_width), @intFromFloat(button_height), bg_color);
+            rl.DrawRectangleLinesEx(rl.Rectangle{ .x = button_x, .y = button_y, .width = button_width, .height = button_height }, 2.0, border_color);
+
+            const text_size: i32 = 28;
+            const text_width = rl.MeasureText(d.label, text_size);
+            const text_x = @as(i32, @intFromFloat(button_x + button_width / 2.0)) - @divTrunc(text_width, 2);
+            const text_y = @as(i32, @intFromFloat(button_y + 10));
+            rl.DrawText(d.label, text_x, text_y, text_size, rl.WHITE);
+
+            // Draw description
+            const desc_size: i32 = 14;
+            const desc_width = rl.MeasureText(d.desc, desc_size);
+            const desc_x = @as(i32, @intFromFloat(button_x + button_width / 2.0)) - @divTrunc(desc_width, 2);
+            const desc_y = text_y + text_size + 2;
+            rl.DrawText(d.desc, desc_x, desc_y, desc_size, rl.LIGHTGRAY);
+        }
+
+        // Draw back button
+        const back_y: f32 = start_y + 3 * (button_height + button_spacing) + 20;
+        const back_width: f32 = 150;
+        const back_x = center_x - back_width / 2.0;
+
+        const back_hovered = mouse_pos.x >= back_x and mouse_pos.x <= back_x + back_width and
+            mouse_pos.y >= back_y and mouse_pos.y <= back_y + button_height;
+
+        const back_bg = if (back_hovered) rl.Color{ .r = 100, .g = 60, .b = 60, .a = 255 } else rl.Color{ .r = 80, .g = 50, .b = 50, .a = 255 };
+        const back_border = if (back_hovered) rl.GOLD else rl.WHITE;
+
+        rl.DrawRectangle(@intFromFloat(back_x), @intFromFloat(back_y), @intFromFloat(back_width), @intFromFloat(button_height), back_bg);
+        rl.DrawRectangleLinesEx(rl.Rectangle{ .x = back_x, .y = back_y, .width = back_width, .height = button_height }, 2.0, back_border);
+
+        const back_text = "< Back";
+        const back_text_size: i32 = 24;
+        const back_text_width = rl.MeasureText(back_text, back_text_size);
+        const back_text_x = @as(i32, @intFromFloat(back_x + back_width / 2.0)) - @divTrunc(back_text_width, 2);
+        const back_text_y = @as(i32, @intFromFloat(back_y + button_height / 2.0)) - @divTrunc(back_text_size, 2);
+        rl.DrawText(back_text, back_text_x, back_text_y, back_text_size, rl.WHITE);
+
+        // Draw hint
+        const hint = "Press ESC or Backspace to go back";
+        const hint_size: i32 = 16;
+        const hint_width = rl.MeasureText(hint, hint_size);
+        const hint_x = @divTrunc(constants.WINDOW_WIDTH - hint_width, 2);
+        rl.DrawText(hint, hint_x, constants.WINDOW_HEIGHT - 50, hint_size, rl.GRAY);
+    }
+
     fn drawPromotionUI(self: *App, promo: PromotionState) void {
+        const renderer = &(self.renderer orelse return);
         // Calculate position (center of board)
         const board_center_x = constants.BOARD_OFFSET_X + constants.SQUARE_SIZE * 4;
         const board_center_y = constants.BOARD_OFFSET_Y + constants.SQUARE_SIZE * 4;
@@ -269,7 +645,7 @@ const App = struct {
 
             // Draw piece
             const piece = Piece.init(promo.piece.getColor(), piece_type);
-            self.renderer.drawPieceAt(piece, piece_x, piece_y, piece_size);
+            renderer.drawPieceAt(piece, piece_x, piece_y, piece_size);
         }
 
         // Draw title text
