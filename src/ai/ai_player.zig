@@ -18,8 +18,9 @@ pub const AIDifficulty = enum {
 pub const AIPlayer = struct {
     difficulty: AIDifficulty,
     prng: std.Random.DefaultPrng,
+    allocator: std.mem.Allocator,
 
-    pub fn init(difficulty: AIDifficulty) AIPlayer {
+    pub fn init(allocator: std.mem.Allocator, difficulty: AIDifficulty) AIPlayer {
         var seed: u64 = undefined;
         std.posix.getrandom(std.mem.asBytes(&seed)) catch {
             seed = @intCast(std.time.milliTimestamp());
@@ -27,13 +28,15 @@ pub const AIPlayer = struct {
         return .{
             .difficulty = difficulty,
             .prng = std.Random.DefaultPrng.init(seed),
+            .allocator = allocator,
         };
     }
 
-    pub fn initWithSeed(difficulty: AIDifficulty, seed: u64) AIPlayer {
+    pub fn initWithSeed(allocator: std.mem.Allocator, difficulty: AIDifficulty, seed: u64) AIPlayer {
         return .{
             .difficulty = difficulty,
             .prng = std.Random.DefaultPrng.init(seed),
+            .allocator = allocator,
         };
     }
 
@@ -54,16 +57,22 @@ pub const AIPlayer = struct {
     }
 
     fn selectMinimaxMove(self: *AIPlayer, board: *const Board, legal_moves: []const Move, depth: u8) Move {
-        var best_move = legal_moves[0];
+        var mutable_board = board.*;
+        const moves = self.allocator.dupe(Move, legal_moves) catch {
+            return legal_moves[0];
+        };
+        defer self.allocator.free(moves);
+
+        self.orderMoves(&mutable_board, moves);
+
+        var best_move = moves[0];
         var best_score: i32 = std.math.minInt(i32);
-        const maximizing = board.active_color == .White;
+        const maximizing = mutable_board.active_color == .White;
 
-        for (legal_moves) |move| {
-            var temp_board = board.clone();
-            temp_board.applyMove(move);
-            temp_board.active_color = temp_board.active_color.opposite();
-
-            const score = self.minimax(&temp_board, depth - 1, std.math.minInt(i32), std.math.maxInt(i32), !maximizing);
+        for (moves) |move| {
+            const undo = mutable_board.makeMove(move);
+            const score = self.minimax(&mutable_board, depth - 1, std.math.minInt(i32), std.math.maxInt(i32), !maximizing);
+            mutable_board.unmakeMove(move, undo);
 
             const adjusted_score = if (maximizing) score else -score;
             if (adjusted_score > best_score) {
@@ -75,7 +84,7 @@ pub const AIPlayer = struct {
         return best_move;
     }
 
-    fn minimax(self: *AIPlayer, board: *const Board, depth: u8, alpha_in: i32, beta_in: i32, maximizing: bool) i32 {
+    fn minimax(self: *AIPlayer, board: *Board, depth: u8, alpha_in: i32, beta_in: i32, maximizing: bool) i32 {
         if (depth == 0) {
             return self.evaluatePosition(board);
         }
@@ -94,17 +103,21 @@ pub const AIPlayer = struct {
             return 0; // Stalemate
         }
 
+        var moves_buf: [256]Move = undefined;
+        @memcpy(moves_buf[0..legal_moves.len], legal_moves);
+        const moves = moves_buf[0..legal_moves.len];
+        self.orderMoves(board, moves);
+
         var alpha = alpha_in;
         var beta = beta_in;
 
         if (maximizing) {
             var max_eval: i32 = std.math.minInt(i32);
-            for (legal_moves) |move| {
-                var temp_board = board.clone();
-                temp_board.applyMove(move);
-                temp_board.active_color = temp_board.active_color.opposite();
+            for (moves) |move| {
+                const undo = board.makeMove(move);
+                const eval = self.minimax(board, depth - 1, alpha, beta, false);
+                board.unmakeMove(move, undo);
 
-                const eval = self.minimax(&temp_board, depth - 1, alpha, beta, false);
                 max_eval = @max(max_eval, eval);
                 alpha = @max(alpha, eval);
                 if (beta <= alpha) break; // Alpha-beta pruning
@@ -112,17 +125,59 @@ pub const AIPlayer = struct {
             return max_eval;
         } else {
             var min_eval: i32 = std.math.maxInt(i32);
-            for (legal_moves) |move| {
-                var temp_board = board.clone();
-                temp_board.applyMove(move);
-                temp_board.active_color = temp_board.active_color.opposite();
+            for (moves) |move| {
+                const undo = board.makeMove(move);
+                const eval = self.minimax(board, depth - 1, alpha, beta, true);
+                board.unmakeMove(move, undo);
 
-                const eval = self.minimax(&temp_board, depth - 1, alpha, beta, true);
                 min_eval = @min(min_eval, eval);
                 beta = @min(beta, eval);
                 if (beta <= alpha) break; // Alpha-beta pruning
             }
             return min_eval;
+        }
+    }
+
+    fn orderMoves(self: *AIPlayer, board: *const Board, moves: []Move) void {
+        _ = self;
+        // Simple MVV-LVA (Most Valuable Victim - Least Valuable Aggressor)
+        // Also prioritize promotions
+        const MoveScore = struct {
+            move: Move,
+            score: i32,
+        };
+
+        var move_scores_buf: [256]MoveScore = undefined;
+        var move_scores_count: usize = 0;
+
+        for (moves) |move| {
+            var score: i32 = 0;
+            const piece = board.getPiece(move.from);
+            const target = board.getPiece(move.to);
+
+            if (!target.isEmpty()) {
+                score = 10 * getPieceValue(target.getType()) - getPieceValue(piece.getType());
+            }
+
+            if (move.promotion) |promo| {
+                score += getPieceValue(promo);
+            }
+
+            move_scores_buf[move_scores_count] = .{ .move = move, .score = score };
+            move_scores_count += 1;
+        }
+
+        const move_scores = move_scores_buf[0..move_scores_count];
+
+        // Sort moves by score descending
+        std.mem.sort(MoveScore, move_scores, {}, struct {
+            fn lessThan(_: void, a: MoveScore, b: MoveScore) bool {
+                return a.score > b.score;
+            }
+        }.lessThan);
+
+        for (move_scores, 0..) |ms, i| {
+            moves[i] = ms.move;
         }
     }
 

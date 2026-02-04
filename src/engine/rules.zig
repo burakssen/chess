@@ -129,18 +129,78 @@ pub const Rules = struct {
     }
 
     pub fn isSquareAttacked(board: *const Board, square: Square, by_color: Color) bool {
-        for (0..64) |i| {
-            const from_sq = Square.fromIndex(@intCast(i));
-            const piece = board.getPiece(from_sq);
-            if (piece.isEmpty() or piece.getColor() != by_color) continue;
+        const rank = square.rank();
+        const file = square.file();
 
-            // Create temporary board with attacker's perspective
-            var temp_board = board.*;
-            temp_board.active_color = by_color;
-
-            const move = Move.init(from_sq, square);
-            if (isMovePseudoLegal(&temp_board, move)) return true;
+        // Knight attacks
+        const knight_offsets = [_][2]i8{
+            .{ -2, -1 }, .{ -2, 1 }, .{ -1, -2 }, .{ -1, 2 },
+            .{ 1, -2 },  .{ 1, 2 },  .{ 2, -1 },  .{ 2, 1 },
+        };
+        for (knight_offsets) |off| {
+            const r = rank + off[0];
+            const f = file + off[1];
+            if (r >= 0 and r < 8 and f >= 0 and f < 8) {
+                const p = board.getPiece(Square.fromCoords(r, f));
+                if (!p.isEmpty() and p.getType() == .Knight and p.getColor() == by_color) return true;
+            }
         }
+
+        // Pawn attacks
+        const pawn_dir: i8 = if (by_color == .White) -1 else 1;
+        const pawn_files = [_]i8{ -1, 1 };
+        for (pawn_files) |df| {
+            const r = rank + pawn_dir;
+            const f = file + df;
+            if (r >= 0 and r < 8 and f >= 0 and f < 8) {
+                const p = board.getPiece(Square.fromCoords(r, f));
+                if (!p.isEmpty() and p.getType() == .Pawn and p.getColor() == by_color) return true;
+            }
+        }
+
+        // King attacks
+        var dr: i8 = -1;
+        while (dr <= 1) : (dr += 1) {
+            var df: i8 = -1;
+            while (df <= 1) : (df += 1) {
+                if (dr == 0 and df == 0) continue;
+                const r = rank + dr;
+                const f = file + df;
+                if (r >= 0 and r < 8 and f >= 0 and f < 8) {
+                    const p = board.getPiece(Square.fromCoords(r, f));
+                    if (!p.isEmpty() and p.getType() == .King and p.getColor() == by_color) return true;
+                }
+            }
+        }
+
+        // Sliding pieces (Rook, Queen, Bishop)
+        const directions = [_][2]i8{
+            .{ -1, 0 }, .{ 1, 0 }, .{ 0, -1 }, .{ 0, 1 }, // Orthogonal
+            .{ -1, -1 }, .{ -1, 1 }, .{ 1, -1 }, .{ 1, 1 }, // Diagonal
+        };
+
+        for (directions, 0..) |dir, i| {
+            var r = rank + dir[0];
+            var f = file + dir[1];
+            while (r >= 0 and r < 8 and f >= 0 and f < 8) : ({
+                r += dir[0];
+                f += dir[1];
+            }) {
+                const p = board.getPiece(Square.fromCoords(r, f));
+                if (!p.isEmpty()) {
+                    if (p.getColor() == by_color) {
+                        const pt = p.getType();
+                        if (i < 4) {
+                            if (pt == .Rook or pt == .Queen) return true;
+                        } else {
+                            if (pt == .Bishop or pt == .Queen) return true;
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+
         return false;
     }
 

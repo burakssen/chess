@@ -8,6 +8,13 @@ const PieceType = core.types.PieceType;
 const Color = core.types.Color;
 const CastlingRights = core.types.CastlingRights;
 
+pub const UndoInfo = struct {
+    captured_piece: Piece,
+    prev_castling_rights: CastlingRights,
+    prev_en_passant_target: ?Square,
+    prev_halfmove_clock: u16,
+};
+
 pub const Board = struct {
     pieces: [64]Piece,
     active_color: Color,
@@ -67,24 +74,40 @@ pub const Board = struct {
         return self.*;
     }
 
-    pub fn applyMove(self: *Board, move: Move) void {
+    pub fn makeMove(self: *Board, move: Move) UndoInfo {
         const piece = self.getPiece(move.from);
         const piece_type = piece.getType();
+        var captured_piece = self.getPiece(move.to);
+
+        const undo_info = UndoInfo{
+            .captured_piece = captured_piece,
+            .prev_castling_rights = self.castling_rights,
+            .prev_en_passant_target = self.en_passant_target,
+            .prev_halfmove_clock = self.halfmove_clock,
+        };
 
         // Handle en passant capture
         if (piece_type == .Pawn and self.en_passant_target != null and move.to == self.en_passant_target.?) {
             const captured_pawn_square = Square.fromCoords(move.from.rank(), move.to.file());
+            captured_piece = self.getPiece(captured_pawn_square);
             self.setPiece(captured_pawn_square, Piece.empty());
         }
 
         // Handle castling
-        if (piece_type == .King and @abs(move.to.file() - move.from.file()) == 2) {
+        if (piece_type == .King and @abs(@as(i16, move.to.file()) - @as(i16, move.from.file())) == 2) {
             const is_kingside = move.to.file() > move.from.file();
             const rank = move.from.rank();
             const rook_from = Square.fromCoords(rank, if (is_kingside) 7 else 0);
             const rook_to = Square.fromCoords(rank, if (is_kingside) 5 else 3);
             self.setPiece(rook_to, self.getPiece(rook_from));
             self.setPiece(rook_from, Piece.empty());
+        }
+
+        // Update halfmove clock
+        if (piece_type == .Pawn or !captured_piece.isEmpty()) {
+            self.halfmove_clock = 0;
+        } else {
+            self.halfmove_clock += 1;
         }
 
         // Move piece
@@ -96,14 +119,67 @@ pub const Board = struct {
         self.setPiece(move.from, Piece.empty());
         self.setPiece(move.to, moving_piece);
 
+        // Update castling rights
+        self.updateCastlingRights(move, undo_info.captured_piece);
+
         // Update en passant target
         self.en_passant_target = null;
-        if (piece_type == .Pawn and @abs(move.to.rank() - move.from.rank()) == 2) {
+        if (piece_type == .Pawn and @abs(@as(i16, move.to.rank()) - @as(i16, move.from.rank())) == 2) {
             self.en_passant_target = Square.fromCoords(
-                @divTrunc(move.from.rank() + move.to.rank(), 2),
+                @intCast(@divTrunc(@as(i16, move.from.rank()) + @as(i16, move.to.rank()), 2)),
                 move.from.file(),
             );
         }
+
+        // Switch active color
+        if (self.active_color == .Black) {
+            self.fullmove_number += 1;
+        }
+        self.active_color = self.active_color.opposite();
+
+        return undo_info;
+    }
+
+    pub fn unmakeMove(self: *Board, move: Move, undo: UndoInfo) void {
+        // Switch color back
+        self.active_color = self.active_color.opposite();
+        if (self.active_color == .Black) {
+            self.fullmove_number -= 1;
+        }
+
+        const piece = self.getPiece(move.to);
+        const piece_type = if (move.promotion != null) PieceType.Pawn else piece.getType();
+        const color = piece.getColor();
+
+        // Restore pieces
+        self.setPiece(move.from, Piece.init(color, piece_type));
+        self.setPiece(move.to, undo.captured_piece);
+
+        // Restore en passant capture if it was one
+        if (piece_type == .Pawn and undo.prev_en_passant_target != null and move.to == undo.prev_en_passant_target.?) {
+            const captured_pawn_square = Square.fromCoords(move.from.rank(), move.to.file());
+            self.setPiece(captured_pawn_square, undo.captured_piece);
+            self.setPiece(move.to, Piece.empty());
+        }
+
+        // Restore castling
+        if (piece_type == .King and @abs(@as(i16, move.to.file()) - @as(i16, move.from.file())) == 2) {
+            const is_kingside = move.to.file() > move.from.file();
+            const rank = move.from.rank();
+            const rook_from = Square.fromCoords(rank, if (is_kingside) 7 else 0);
+            const rook_to = Square.fromCoords(rank, if (is_kingside) 5 else 3);
+            self.setPiece(rook_from, self.getPiece(rook_to));
+            self.setPiece(rook_to, Piece.empty());
+        }
+
+        // Restore state
+        self.castling_rights = undo.prev_castling_rights;
+        self.en_passant_target = undo.prev_en_passant_target;
+        self.halfmove_clock = undo.prev_halfmove_clock;
+    }
+
+    pub fn applyMove(self: *Board, move: Move) void {
+        _ = self.makeMove(move);
     }
 
     pub fn updateCastlingRights(self: *Board, move: Move, captured_piece: Piece) void {

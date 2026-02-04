@@ -1,5 +1,7 @@
 const std = @import("std");
-const Board = @import("board.zig").Board;
+const board = @import("board.zig");
+const Board = board.Board;
+const UndoInfo = board.UndoInfo;
 const Rules = @import("rules.zig").Rules;
 const MoveGenerator = @import("move_gen.zig").MoveGenerator;
 const core = @import("core");
@@ -22,6 +24,7 @@ pub const ChessGame = struct {
     board: Board,
     move_gen: MoveGenerator,
     move_history: std.ArrayList(Move),
+    undo_history: std.ArrayList(UndoInfo),
     status: GameStatus,
     game_mode: GameMode,
     human_color: Color,
@@ -36,6 +39,7 @@ pub const ChessGame = struct {
             .board = Board.init(),
             .move_gen = MoveGenerator.init(),
             .move_history = try .initCapacity(allocator, 512),
+            .undo_history = try .initCapacity(allocator, 512),
             .status = .ongoing,
             .game_mode = mode,
             .human_color = human_color,
@@ -44,6 +48,7 @@ pub const ChessGame = struct {
 
     pub fn deinit(self: *ChessGame) void {
         self.move_history.deinit(self.allocator);
+        self.undo_history.deinit(self.allocator);
     }
 
     /// Returns true if the current player is a computer
@@ -64,31 +69,19 @@ pub const ChessGame = struct {
     pub fn makeMove(self: *ChessGame, move: Move) !void {
         if (!Rules.isMoveLegal(&self.board, move)) return error.IllegalMove;
 
-        const moving_piece = self.board.getPiece(move.from);
-        const captured_piece = self.board.getPiece(move.to);
-
-        // Check for en passant capture (pawn captures on en passant square)
-        const is_en_passant = moving_piece.getType() == .Pawn and
-            self.board.en_passant_target != null and
-            move.to == self.board.en_passant_target.?;
-
-        self.board.applyMove(move);
-        self.board.updateCastlingRights(move, captured_piece);
-
-        // Update halfmove clock (reset on pawn move or capture, otherwise increment)
-        if (moving_piece.getType() == .Pawn or !captured_piece.isEmpty() or is_en_passant) {
-            self.board.halfmove_clock = 0;
-        } else {
-            self.board.halfmove_clock += 1;
-        }
-
+        const undo_info = self.board.makeMove(move);
         try self.move_history.append(self.allocator, move);
+        try self.undo_history.append(self.allocator, undo_info);
 
-        // Switch active color
-        self.board.active_color = self.board.active_color.opposite();
-        if (self.board.active_color == .White) {
-            self.board.fullmove_number += 1;
-        }
+        self.updateGameStatus();
+    }
+
+    pub fn undoMove(self: *ChessGame) void {
+        if (self.move_history.items.len == 0) return;
+
+        const move = self.move_history.pop().?;
+        const undo = self.undo_history.pop().?;
+        self.board.unmakeMove(move, undo);
 
         self.updateGameStatus();
     }

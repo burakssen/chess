@@ -107,8 +107,28 @@ const App = struct {
 
         self.game = try ChessGame.initWithMode(self.allocator, mode, human_color);
         self.renderer = try Renderer.init(self.allocator, theme);
-        self.ai_player = if (needs_ai) AIPlayer.init(difficulty) else null;
+        self.ai_player = if (needs_ai) AIPlayer.init(self.allocator, difficulty) else null;
         self.menu_state = .playing;
+    }
+
+    fn undoMove(self: *App) void {
+        var game = &(self.game orelse return);
+        if (game.move_history.items.len == 0) return;
+
+        // If it's a computer game and computer is thinking or it's computer's turn, undo twice
+        const computer_game = game.game_mode != .human_vs_human;
+        if (computer_game) {
+            // Undo computer's last move if any
+            if (game.move_history.items.len > 0) game.undoMove();
+            // Undo player's last move if any
+            if (game.move_history.items.len > 0) game.undoMove();
+        } else {
+            game.undoMove();
+        }
+        self.move_animation = null;
+        self.selected_square = null;
+        self.legal_moves_count = 0;
+        self.ai_move_timer = 0;
     }
 
     pub fn deinit(self: *App) void {
@@ -136,6 +156,36 @@ const App = struct {
         }
 
         var game = &(self.game orelse return);
+
+        // Handle panel buttons
+        if (InputHandler.isMousePressed()) {
+            const mouse_pos = InputHandler.getMousePosition();
+            const button_width = (constants.PANEL_WIDTH - 60) / 2;
+            const button_height = 40;
+            const buttons_y = constants.PANEL_Y + constants.PANEL_HEIGHT - 60;
+
+            const undo_rect = rl.Rectangle{
+                .x = constants.PANEL_X + 20,
+                .y = buttons_y,
+                .width = button_width,
+                .height = button_height,
+            };
+            if (rl.CheckCollisionPointRec(mouse_pos, undo_rect)) {
+                self.undoMove();
+                return;
+            }
+
+            const reset_rect = rl.Rectangle{
+                .x = constants.PANEL_X + 40 + button_width,
+                .y = buttons_y,
+                .width = button_width,
+                .height = button_height,
+            };
+            if (rl.CheckCollisionPointRec(mouse_pos, reset_rect)) {
+                self.returnToMenu();
+                return;
+            }
+        }
 
         // Handle animation
         if (self.move_animation) |*anim| {
@@ -480,6 +530,19 @@ const App = struct {
         // Draw board
         renderer.drawBoard();
 
+        // Highlight last move
+        if (game.move_history.items.len > 0) {
+            const last_move = game.move_history.items[game.move_history.items.len - 1];
+            renderer.drawLastMoveHighlight(last_move);
+        }
+
+        // Highlight check
+        if (game.isInCheck()) {
+            if (game.board.findKing(game.board.active_color)) |king_sq| {
+                renderer.drawCheckHighlight(king_sq);
+            }
+        }
+
         // Highlight selected square
         if (self.selected_square) |square| {
             renderer.drawSelectedSquare(square);
@@ -512,6 +575,36 @@ const App = struct {
                 null;
             renderer.drawGameOver(game.status, winner);
         }
+
+        // Draw Right Panel
+        renderer.drawRightPanel(game.move_history.items);
+
+        // Draw Control Buttons
+        const button_width = (constants.PANEL_WIDTH - 60) / 2;
+        const button_height = 40;
+        const buttons_y = constants.PANEL_Y + constants.PANEL_HEIGHT - 60;
+
+        const mouse_pos = InputHandler.getMousePosition();
+
+        // Undo Button
+        const undo_rect = rl.Rectangle{
+            .x = constants.PANEL_X + 20,
+            .y = buttons_y,
+            .width = button_width,
+            .height = button_height,
+        };
+        const undo_hovered = rl.CheckCollisionPointRec(mouse_pos, undo_rect);
+        renderer.drawButton(undo_rect, "Undo", undo_hovered);
+
+        // Reset Button
+        const reset_rect = rl.Rectangle{
+            .x = constants.PANEL_X + 40 + button_width,
+            .y = buttons_y,
+            .width = button_width,
+            .height = button_height,
+        };
+        const reset_hovered = rl.CheckCollisionPointRec(mouse_pos, reset_rect);
+        renderer.drawButton(reset_rect, "Reset", reset_hovered);
     }
 
     fn updateThemeMenu(self: *App) void {

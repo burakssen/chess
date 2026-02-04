@@ -68,7 +68,6 @@ pub const Renderer = struct {
             for (0..8) |file_idx| {
                 const rank: u8 = @intCast(rank_idx);
                 const file: u8 = @intCast(file_idx);
-                // Original: const is_light = (rank + file) % 2 == 0;
                 const is_light_orig = (rank + file) % 2 == 0;
                 const color = if (is_light_orig) self.theme.light_square else self.theme.dark_square;
 
@@ -78,6 +77,59 @@ pub const Renderer = struct {
                 rl.DrawRectangle(x, y, constants.SQUARE_SIZE, constants.SQUARE_SIZE, color);
             }
         }
+
+        self.drawCoordinates();
+    }
+
+    fn drawCoordinates(self: *Renderer) void {
+        const font_size = 16;
+
+        // Draw files (a-h) on the bottom rank squares
+        for (0..8) |file_idx| {
+            const label: [2]u8 = .{ @as(u8, @intCast(file_idx)) + 'a', 0 };
+            const label_ptr: [*c]const u8 = @ptrCast(&label);
+
+            // Position at bottom-right of each square in the bottom rank (rank 0)
+            const x = constants.BOARD_OFFSET_X + @as(i32, @intCast(file_idx)) * constants.SQUARE_SIZE + constants.SQUARE_SIZE - 15;
+            const y = constants.BOARD_OFFSET_Y + 7 * constants.SQUARE_SIZE + constants.SQUARE_SIZE - 20;
+
+            const is_light = file_idx % 2 != 0; // Rank 0, so (0 + file_idx) % 2
+            const color = if (is_light) self.theme.dark_square else self.theme.light_square;
+
+            rl.DrawText(label_ptr, x, y, font_size, color);
+        }
+
+        // Draw ranks (1-8) on the 'a' file squares
+        for (0..8) |rank_idx| {
+            const label: [2]u8 = .{ @as(u8, @intCast(rank_idx)) + '1', 0 };
+            const label_ptr: [*c]const u8 = @ptrCast(&label);
+
+            // Position at top-left of each square in the 'a' file (file 0)
+            const x = constants.BOARD_OFFSET_X + 5;
+            const y = constants.BOARD_OFFSET_Y + @as(i32, @intCast(7 - rank_idx)) * constants.SQUARE_SIZE + 5;
+
+            const is_light = rank_idx % 2 != 0; // File 0, so (rank_idx + 0) % 2
+            const color = if (is_light) self.theme.dark_square else self.theme.light_square;
+
+            rl.DrawText(label_ptr, x, y, font_size, color);
+        }
+    }
+
+    pub fn drawLastMoveHighlight(self: *Renderer, move: Move) void {
+        _ = self;
+        const color = rl.Fade(rl.YELLOW, 0.3);
+        const from_pos = squareToScreen(move.from);
+        const to_pos = squareToScreen(move.to);
+
+        rl.DrawRectangle(@intFromFloat(from_pos.x), @intFromFloat(from_pos.y), constants.SQUARE_SIZE, constants.SQUARE_SIZE, color);
+        rl.DrawRectangle(@intFromFloat(to_pos.x), @intFromFloat(to_pos.y), constants.SQUARE_SIZE, constants.SQUARE_SIZE, color);
+    }
+
+    pub fn drawCheckHighlight(self: *Renderer, king_square: Square) void {
+        _ = self;
+        const pos = squareToScreen(king_square);
+        const color = rl.Fade(rl.RED, 0.5);
+        rl.DrawRectangle(@intFromFloat(pos.x), @intFromFloat(pos.y), constants.SQUARE_SIZE, constants.SQUARE_SIZE, color);
     }
 
     pub fn drawSelectedSquare(self: *Renderer, square: Square) void {
@@ -249,6 +301,96 @@ pub const Renderer = struct {
                 rl.RED,
             );
         }
+    }
+
+    pub fn drawRightPanel(self: *Renderer, move_history: []const Move) void {
+        _ = self;
+        // Panel Background
+        rl.DrawRectangle(
+            constants.PANEL_X,
+            constants.PANEL_Y,
+            constants.PANEL_WIDTH,
+            constants.PANEL_HEIGHT,
+            rl.Color{ .r = 45, .g = 45, .b = 45, .a = 255 },
+        );
+        rl.DrawRectangleLines(
+            constants.PANEL_X,
+            constants.PANEL_Y,
+            constants.PANEL_WIDTH,
+            constants.PANEL_HEIGHT,
+            rl.Color{ .r = 60, .g = 60, .b = 60, .a = 255 },
+        );
+
+        // Header
+        const header = "Move History";
+        const header_size = 24;
+        const header_width = rl.MeasureText(header, header_size);
+        rl.DrawText(
+            header,
+            constants.PANEL_X + @divTrunc(constants.PANEL_WIDTH - header_width, 2),
+            constants.PANEL_Y + 20,
+            header_size,
+            rl.LIGHTGRAY,
+        );
+
+        // Move History List
+        const list_y = constants.PANEL_Y + 60;
+        const list_height = constants.PANEL_HEIGHT - 160;
+        const row_height = 25;
+        const moves_per_page = @divTrunc(list_height, row_height);
+
+        const total_moves = move_history.len;
+        const start_move = if (total_moves > moves_per_page * 2)
+            ((total_moves - 1) / 2 - moves_per_page + 1) * 2
+        else
+            0;
+
+        var i: usize = start_move;
+        var row: i32 = 0;
+        while (i < total_moves) : (row += 1) {
+            const move_num = i / 2 + 1;
+            var buf: [32]u8 = undefined;
+            const num_text = std.fmt.bufPrintZ(&buf, "{d}.", .{move_num}) catch "?.";
+
+            const y = list_y + row * row_height;
+
+            // Draw move number
+            rl.DrawText(num_text, constants.PANEL_X + 20, y, 20, rl.GRAY);
+
+            // White move
+            var white_buf: [16]u8 = undefined;
+            const white_text = move_history[i].toNotation(&white_buf) catch "??";
+            const white_text_z = std.fmt.bufPrintZ(&buf, "{s}", .{white_text}) catch "??";
+            rl.DrawText(white_text_z, constants.PANEL_X + 60, y, 20, rl.WHITE);
+
+            // Black move
+            if (i + 1 < total_moves) {
+                var black_buf: [16]u8 = undefined;
+                const black_text = move_history[i + 1].toNotation(&black_buf) catch "??";
+                const black_text_z = std.fmt.bufPrintZ(&buf, "{s}", .{black_text}) catch "??";
+                rl.DrawText(black_text_z, constants.PANEL_X + 160, y, 20, rl.WHITE);
+            }
+
+            i += 2;
+            if (row >= moves_per_page) break;
+        }
+
+        // Buttons at the bottom
+        // Draw buttons is handled by main app for click detection but we can draw them here
+    }
+
+    pub fn drawButton(self: *Renderer, rect: rl.Rectangle, text: [*c]const u8, hovered: bool) void {
+        _ = self;
+        const bg_color = if (hovered) rl.Color{ .r = 80, .g = 80, .b = 80, .a = 255 } else rl.Color{ .r = 60, .g = 60, .b = 60, .a = 255 };
+        rl.DrawRectangleRec(rect, bg_color);
+        rl.DrawRectangleLinesEx(rect, 2, rl.GRAY);
+
+        const font_size = 20;
+        const text_width = rl.MeasureText(text, font_size);
+        const text_x = rect.x + (rect.width - @as(f32, @floatFromInt(text_width))) / 2.0;
+        const text_y = rect.y + (rect.height - @as(f32, @floatFromInt(font_size))) / 2.0;
+
+        rl.DrawText(text, @intFromFloat(text_x), @intFromFloat(text_y), font_size, rl.WHITE);
     }
 };
 
