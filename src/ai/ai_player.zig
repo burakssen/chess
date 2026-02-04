@@ -13,7 +13,6 @@ pub const AIDifficulty = enum {
     easy, // Random moves
     medium, // 2-ply minimax
     hard, // 4-ply minimax with alpha-beta pruning
-    impossible, // 8-ply minimax with alpha-beta pruning (very slow, strongest)
 };
 
 pub const AIPlayer = struct {
@@ -46,7 +45,6 @@ pub const AIPlayer = struct {
             .easy => self.selectRandomMove(legal_moves),
             .medium => self.selectMinimaxMove(board, legal_moves, 2),
             .hard => self.selectMinimaxMove(board, legal_moves, 4),
-            .impossible => self.selectMinimaxMove(board, legal_moves, 8),
         };
     }
 

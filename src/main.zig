@@ -8,6 +8,7 @@ const GameMode = engine.GameMode;
 const ui = @import("ui");
 const Renderer = ui.Renderer;
 const DragState = ui.DragState;
+const MoveAnimation = ui.MoveAnimation;
 const InputHandler = ui.InputHandler;
 const constants = ui.constants;
 
@@ -54,6 +55,7 @@ const App = struct {
     game: ?ChessGame,
     renderer: ?Renderer,
     drag_state: ?DragState,
+    move_animation: ?MoveAnimation,
     selected_square: ?Square,
     legal_moves_buffer: [256]Move,
     legal_moves_count: usize,
@@ -73,6 +75,7 @@ const App = struct {
             .game = null,
             .renderer = null,
             .drag_state = null,
+            .move_animation = null,
             .selected_square = null,
             .legal_moves_buffer = undefined,
             .legal_moves_count = 0,
@@ -124,6 +127,20 @@ const App = struct {
         }
 
         var game = &(self.game orelse return);
+
+        // Handle animation
+        if (self.move_animation) |*anim| {
+            anim.progress += anim.speed;
+            if (anim.progress >= 1.0) {
+                // Apply move
+                game.makeMove(anim.move) catch |err| {
+                    std.debug.print("Animation move failed: {}\n", .{err});
+                };
+                self.move_animation = null;
+                self.ai_move_timer = 0; // Reset timer after animation
+            }
+            return;
+        }
 
         // Handle promotion selection
         if (self.promotion_state) |promo| {
@@ -237,6 +254,7 @@ const App = struct {
             self.renderer = null;
         }
         self.drag_state = null;
+        self.move_animation = null;
         self.selected_square = null;
         self.legal_moves_count = 0;
         self.promotion_state = null;
@@ -298,7 +316,6 @@ const App = struct {
             .{ .diff = .easy, .label = "Easy" },
             .{ .diff = .medium, .label = "Medium" },
             .{ .diff = .hard, .label = "Hard" },
-            .{ .diff = .impossible, .label = "Impossible" },
         };
 
         // Handle back button (Escape or R key)
@@ -309,7 +326,7 @@ const App = struct {
 
         if (InputHandler.isMousePressed()) {
             // Check back button
-            const back_y: f32 = start_y + 3 * (button_height + button_spacing) + 20;
+            const back_y: f32 = start_y + @as(f32, @floatFromInt(difficulties.len)) * (button_height + button_spacing) + 20;
             const back_width: f32 = 150;
             const back_x = center_x - back_width / 2.0;
 
@@ -349,8 +366,13 @@ const App = struct {
         if (self.ai_player) |*ai_player| {
             const legal_moves = game.getLegalMoves();
             if (ai_player.selectMove(&game.board, legal_moves)) |move| {
-                try game.makeMove(move);
-                self.ai_move_timer = 0;
+                // Start animation
+                self.move_animation = .{
+                    .move = move,
+                    .piece = game.board.getPiece(move.from),
+                    .progress = 0.0,
+                    .speed = 0.075, // Adjust speed as needed
+                };
             }
         }
     }
@@ -447,7 +469,7 @@ const App = struct {
         }
 
         // Draw pieces
-        renderer.drawPieces(&game.board, self.drag_state);
+        renderer.drawPieces(&game.board, self.drag_state, self.move_animation);
 
         // Draw dragged piece
         if (self.drag_state) |drag| {
@@ -576,7 +598,7 @@ const App = struct {
         }
 
         // Draw back button
-        const back_y: f32 = start_y + 3 * (button_height + button_spacing) + 20;
+        const back_y: f32 = start_y + @as(f32, @floatFromInt(difficulties.len)) * (button_height + button_spacing) + 20;
         const back_width: f32 = 150;
         const back_x = center_x - back_width / 2.0;
 

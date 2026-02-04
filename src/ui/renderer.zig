@@ -19,6 +19,22 @@ pub const DragState = struct {
     from: Square,
 };
 
+pub const MoveAnimation = struct {
+    move: Move,
+    piece: Piece,
+    progress: f32,
+    speed: f32,
+};
+
+fn easeInOutCubic(t: f32) f32 {
+    if (t < 0.5) {
+        return 4.0 * t * t * t;
+    } else {
+        const f = -2.0 * t + 2.0;
+        return 1.0 - f * f * f / 2.0;
+    }
+}
+
 pub const Renderer = struct {
     assets: AssetManager,
 
@@ -99,7 +115,7 @@ pub const Renderer = struct {
         }
     }
 
-    pub fn drawPieces(self: *Renderer, board: *const Board, dragging: ?DragState) void {
+    pub fn drawPieces(self: *Renderer, board: *const Board, dragging: ?DragState, animation: ?MoveAnimation) void {
         for (0..64) |i| {
             const square = Square.fromIndex(@intCast(i));
             const piece = board.getPiece(square);
@@ -109,10 +125,27 @@ pub const Renderer = struct {
                 if (drag.from == square) continue;
             }
 
+            // Skip if this piece is being animated
+            if (animation) |anim| {
+                if (anim.move.from == square) continue;
+            }
+
             if (!piece.isEmpty()) {
                 const pos = squareToScreen(square);
                 self.drawPiece(piece, pos.x, pos.y);
             }
+        }
+
+        // Draw animating piece on top
+        if (animation) |anim| {
+            const start_pos = squareToScreen(anim.move.from);
+            const end_pos = squareToScreen(anim.move.to);
+            const t = easeInOutCubic(anim.progress);
+
+            const cur_x = start_pos.x + (end_pos.x - start_pos.x) * t;
+            const cur_y = start_pos.y + (end_pos.y - start_pos.y) * t;
+
+            self.drawPiece(anim.piece, cur_x, cur_y);
         }
     }
 
