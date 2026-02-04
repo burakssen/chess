@@ -14,6 +14,8 @@ const GameStatus = core.types.GameStatus;
 const constants = @import("constants.zig");
 const AssetManager = @import("assets.zig").AssetManager;
 
+const Theme = @import("theme.zig").Theme;
+
 pub const DragState = struct {
     piece: Piece,
     from: Square,
@@ -37,10 +39,12 @@ fn easeInOutCubic(t: f32) f32 {
 
 pub const Renderer = struct {
     assets: AssetManager,
+    theme: Theme,
 
-    pub fn init(allocator: std.mem.Allocator) !Renderer {
+    pub fn init(allocator: std.mem.Allocator, theme: Theme) !Renderer {
         return .{
-            .assets = try AssetManager.init(allocator),
+            .assets = try AssetManager.init(allocator, theme),
+            .theme = theme,
         };
     }
 
@@ -60,13 +64,13 @@ pub const Renderer = struct {
     }
 
     pub fn drawBoard(self: *Renderer) void {
-        _ = self;
         for (0..8) |rank_idx| {
             for (0..8) |file_idx| {
                 const rank: u8 = @intCast(rank_idx);
                 const file: u8 = @intCast(file_idx);
-                const is_light = (rank + file) % 2 == 0;
-                const color = if (is_light) constants.LIGHT_SQUARE else constants.DARK_SQUARE;
+                // Original: const is_light = (rank + file) % 2 == 0;
+                const is_light_orig = (rank + file) % 2 == 0;
+                const color = if (is_light_orig) self.theme.light_square else self.theme.dark_square;
 
                 const x = constants.BOARD_OFFSET_X + @as(i32, @intCast(file)) * constants.SQUARE_SIZE;
                 const y = constants.BOARD_OFFSET_Y + @as(i32, @intCast(7 - rank)) * constants.SQUARE_SIZE;
@@ -77,19 +81,17 @@ pub const Renderer = struct {
     }
 
     pub fn drawSelectedSquare(self: *Renderer, square: Square) void {
-        _ = self;
         const pos = squareToScreen(square);
         rl.DrawRectangle(
             @intFromFloat(pos.x),
             @intFromFloat(pos.y),
             constants.SQUARE_SIZE,
             constants.SQUARE_SIZE,
-            constants.SELECTED_COLOR,
+            self.theme.selected_color,
         );
     }
 
     pub fn drawLegalMoves(self: *Renderer, board: *const Board, moves: []const Move) void {
-        _ = self;
         for (moves) |move| {
             const pos = squareToScreen(move.to);
             const target_piece = board.getPiece(move.to);
@@ -98,7 +100,7 @@ pub const Renderer = struct {
                 // Draw circle for empty square moves
                 const center_x = @as(i32, @intFromFloat(pos.x)) + constants.SQUARE_SIZE / 2;
                 const center_y = @as(i32, @intFromFloat(pos.y)) + constants.SQUARE_SIZE / 2;
-                rl.DrawCircle(center_x, center_y, constants.SQUARE_SIZE / 6, rl.Fade(constants.HIGHLIGHT_COLOR, 0.5));
+                rl.DrawCircle(center_x, center_y, constants.SQUARE_SIZE / 6, rl.Fade(self.theme.highlight_color, 0.5));
             } else {
                 // Draw ring for capture moves
                 rl.DrawRectangleLinesEx(
@@ -109,7 +111,7 @@ pub const Renderer = struct {
                         .height = constants.SQUARE_SIZE - 8,
                     },
                     4.0,
-                    constants.HIGHLIGHT_COLOR,
+                    self.theme.highlight_color,
                 );
             }
         }

@@ -5,10 +5,12 @@ const Piece = core.Piece;
 const Color = core.types.Color;
 const PieceType = core.types.PieceType;
 
+const Theme = @import("theme.zig").Theme;
+
 pub const AssetManager = struct {
     textures: [64]?rl.Texture2D,
 
-    pub fn init(allocator: std.mem.Allocator) !AssetManager {
+    pub fn init(allocator: std.mem.Allocator, theme: Theme) !AssetManager {
         var self = AssetManager{
             .textures = [_]?rl.Texture2D{null} ** 64,
         };
@@ -32,10 +34,35 @@ pub const AssetManager = struct {
             const piece = Piece.init(p.color, p.piece_type);
             const value = piece.getTextureValue();
 
-            const path = try std.fmt.allocPrintSentinel(allocator, "assets/{b:0>4}.png", .{value}, 0);
+            // Try the path as specified in the theme
+            const path = try std.fmt.allocPrintSentinel(allocator, "{s}/{b:0>4}.png", .{ theme.asset_path, value }, 0);
             defer allocator.free(path);
 
-            const texture = rl.LoadTexture(path.ptr);
+            var texture = rl.LoadTexture(path.ptr);
+
+            // If it failed and the path starts with "assets/", try without it
+            if (texture.id == 0 and std.mem.startsWith(u8, theme.asset_path, "assets/")) {
+                const sub_path = theme.asset_path["assets/".len..];
+                const alt_path = try std.fmt.allocPrintSentinel(allocator, "{s}/{b:0>4}.png", .{ sub_path, value }, 0);
+                defer allocator.free(alt_path);
+                texture = rl.LoadTexture(alt_path.ptr);
+            }
+
+            // Fallback to default assets if theme assets are still missing
+            if (texture.id == 0) {
+                // Try assets/default/...
+                const fallback_path = try std.fmt.allocPrintSentinel(allocator, "assets/default/{b:0>4}.png", .{value}, 0);
+                defer allocator.free(fallback_path);
+                texture = rl.LoadTexture(fallback_path.ptr);
+
+                // If that also fails, try default/... (in case we are already in assets/)
+                if (texture.id == 0) {
+                    const fallback_path_alt = try std.fmt.allocPrintSentinel(allocator, "default/{b:0>4}.png", .{value}, 0);
+                    defer allocator.free(fallback_path_alt);
+                    texture = rl.LoadTexture(fallback_path_alt.ptr);
+                }
+            }
+
             if (texture.id > 0) {
                 rl.SetTextureFilter(texture, rl.TEXTURE_FILTER_POINT);
                 self.textures[value] = texture;

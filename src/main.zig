@@ -31,6 +31,7 @@ const PromotionState = struct {
 const MenuState = enum {
     main_menu,
     difficulty_select,
+    theme_select,
     playing,
 };
 
@@ -39,6 +40,7 @@ const MenuSelection = struct {
     difficulty: AIDifficulty,
     selected_mode_index: usize,
     selected_difficulty_index: usize,
+    selected_theme_index: usize,
 
     pub fn init() MenuSelection {
         return .{
@@ -46,6 +48,7 @@ const MenuSelection = struct {
             .difficulty = .medium,
             .selected_mode_index = 1,
             .selected_difficulty_index = 1,
+            .selected_theme_index = 0,
         };
     }
 };
@@ -92,6 +95,7 @@ const App = struct {
     fn startGame(self: *App) !void {
         const mode = self.menu_selection.game_mode;
         const difficulty = self.menu_selection.difficulty;
+        const theme = ui.ALL_THEMES[self.menu_selection.selected_theme_index];
 
         const needs_ai = mode != .human_vs_human;
         const human_color: Color = switch (mode) {
@@ -102,7 +106,7 @@ const App = struct {
         };
 
         self.game = try ChessGame.initWithMode(self.allocator, mode, human_color);
-        self.renderer = try Renderer.init(self.allocator);
+        self.renderer = try Renderer.init(self.allocator, theme);
         self.ai_player = if (needs_ai) AIPlayer.init(difficulty) else null;
         self.menu_state = .playing;
     }
@@ -122,6 +126,10 @@ const App = struct {
             },
             .difficulty_select => {
                 try self.updateDifficultyMenu();
+                return;
+            },
+            .theme_select => {
+                self.updateThemeMenu();
                 return;
             },
             .playing => {},
@@ -299,8 +307,17 @@ const App = struct {
                         // Go to difficulty selection
                         self.menu_state = .difficulty_select;
                     }
-                    break;
+                    return;
                 }
+            }
+
+            // Check themes button
+            const themes_y = start_y + @as(f32, @floatFromInt(modes.len)) * (button_height + button_spacing) + 20;
+            const themes_x = center_x - button_width / 2.0;
+            if (mouse_pos.x >= themes_x and mouse_pos.x <= themes_x + button_width and
+                mouse_pos.y >= themes_y and mouse_pos.y <= themes_y + button_height)
+            {
+                self.menu_state = .theme_select;
             }
         }
     }
@@ -450,6 +467,10 @@ const App = struct {
                 self.drawDifficultyMenu();
                 return;
             },
+            .theme_select => {
+                self.drawThemeMenu();
+                return;
+            },
             .playing => {},
         }
 
@@ -493,8 +514,49 @@ const App = struct {
         }
     }
 
+    fn updateThemeMenu(self: *App) void {
+        const mouse_pos = InputHandler.getMousePosition();
+        const center_x = @as(f32, @floatFromInt(constants.WINDOW_WIDTH)) / 2.0;
+        const start_y: f32 = 250;
+        const button_width: f32 = 300;
+        const button_height: f32 = 60;
+        const button_spacing: f32 = 20;
+
+        // Handle back button (Escape or R key)
+        if (rl.IsKeyPressed(rl.KEY_ESCAPE) or rl.IsKeyPressed(rl.KEY_BACKSPACE)) {
+            self.menu_state = .main_menu;
+            return;
+        }
+
+        if (InputHandler.isMousePressed()) {
+            // Check theme buttons
+            for (ui.ALL_THEMES, 0..) |_, i| {
+                const button_y = start_y + @as(f32, @floatFromInt(i)) * (button_height + button_spacing);
+                const button_x = center_x - button_width / 2.0;
+
+                if (mouse_pos.x >= button_x and mouse_pos.x <= button_x + button_width and
+                    mouse_pos.y >= button_y and mouse_pos.y <= button_y + button_height)
+                {
+                    self.menu_selection.selected_theme_index = i;
+                    // No need to start game, just select theme
+                }
+            }
+
+            // Check back button
+            const back_y = start_y + @as(f32, @floatFromInt(ui.ALL_THEMES.len)) * (button_height + button_spacing) + 20;
+            const back_width: f32 = 150;
+            const back_x = center_x - back_width / 2.0;
+
+            if (mouse_pos.x >= back_x and mouse_pos.x <= back_x + back_width and
+                mouse_pos.y >= back_y and mouse_pos.y <= back_y + button_height)
+            {
+                self.menu_state = .main_menu;
+                return;
+            }
+        }
+    }
+
     fn drawMainMenu(self: *App) void {
-        _ = self;
         const center_x = @as(f32, @floatFromInt(constants.WINDOW_WIDTH)) / 2.0;
         const start_y: f32 = 250;
         const button_width: f32 = 300;
@@ -545,6 +607,95 @@ const App = struct {
             const text_y = @as(i32, @intFromFloat(button_y + button_height / 2.0)) - @divTrunc(text_size, 2);
             rl.DrawText(label, text_x, text_y, text_size, rl.WHITE);
         }
+
+        // Themes button
+        const themes_y = start_y + @as(f32, @floatFromInt(modes.len)) * (button_height + button_spacing) + 20;
+        const themes_x = center_x - button_width / 2.0;
+        const themes_hovered = mouse_pos.x >= themes_x and mouse_pos.x <= themes_x + button_width and
+            mouse_pos.y >= themes_y and mouse_pos.y <= themes_y + button_height;
+
+        const themes_bg = if (themes_hovered) rl.Color{ .r = 100, .g = 100, .b = 100, .a = 255 } else rl.Color{ .r = 80, .g = 80, .b = 80, .a = 255 };
+        const themes_border = if (themes_hovered) rl.GOLD else rl.WHITE;
+
+        rl.DrawRectangle(@intFromFloat(themes_x), @intFromFloat(themes_y), @intFromFloat(button_width), @intFromFloat(button_height), themes_bg);
+        rl.DrawRectangleLinesEx(rl.Rectangle{ .x = themes_x, .y = themes_y, .width = button_width, .height = button_height }, 2.0, themes_border);
+
+        const current_theme = ui.ALL_THEMES[self.menu_selection.selected_theme_index].name;
+        var themes_label_buf: [64]u8 = undefined;
+        const themes_label = std.fmt.bufPrintZ(&themes_label_buf, "Theme: {s}", .{current_theme}) catch "Themes";
+
+        const themes_text_size: i32 = 24;
+        const themes_text_width = rl.MeasureText(themes_label, themes_text_size);
+        const themes_text_x = @as(i32, @intFromFloat(themes_x + button_width / 2.0)) - @divTrunc(themes_text_width, 2);
+        const themes_text_y = @as(i32, @intFromFloat(themes_y + button_height / 2.0)) - @divTrunc(themes_text_size, 2);
+        rl.DrawText(themes_label, themes_text_x, themes_text_y, themes_text_size, rl.WHITE);
+    }
+
+    fn drawThemeMenu(self: *App) void {
+        const center_x = @as(f32, @floatFromInt(constants.WINDOW_WIDTH)) / 2.0;
+        const start_y: f32 = 250;
+        const button_width: f32 = 300;
+        const button_height: f32 = 60;
+        const button_spacing: f32 = 20;
+
+        // Draw title
+        const title = "Select Theme";
+        const title_size: i32 = 48;
+        const title_width = rl.MeasureText(title, title_size);
+        const title_x = @divTrunc(constants.WINDOW_WIDTH - title_width, 2);
+        rl.DrawText(title, title_x + 2, 152, title_size, rl.BLACK);
+        rl.DrawText(title, title_x, 150, title_size, rl.GOLD);
+
+        const mouse_pos = InputHandler.getMousePosition();
+
+        for (ui.ALL_THEMES, 0..) |theme, i| {
+            const button_y = start_y + @as(f32, @floatFromInt(i)) * (button_height + button_spacing);
+            const button_x = center_x - button_width / 2.0;
+
+            const is_hovered = mouse_pos.x >= button_x and mouse_pos.x <= button_x + button_width and
+                mouse_pos.y >= button_y and mouse_pos.y <= button_y + button_height;
+            const is_selected = self.menu_selection.selected_theme_index == i;
+
+            var bg_color = if (is_hovered) rl.Color{ .r = 80, .g = 80, .b = 100, .a = 255 } else rl.Color{ .r = 60, .g = 60, .b = 80, .a = 255 };
+            if (is_selected) bg_color = rl.Color{ .r = 100, .g = 100, .b = 150, .a = 255 };
+            const border_color = if (is_selected or is_hovered) rl.GOLD else rl.WHITE;
+
+            rl.DrawRectangle(@intFromFloat(button_x), @intFromFloat(button_y), @intFromFloat(button_width), @intFromFloat(button_height), bg_color);
+            rl.DrawRectangleLinesEx(rl.Rectangle{ .x = button_x, .y = button_y, .width = button_width, .height = button_height }, 2.0, border_color);
+
+            const text_size: i32 = 24;
+            const text_ptr: [*c]const u8 = @ptrCast(theme.name.ptr);
+            const text_width = rl.MeasureText(text_ptr, text_size);
+            const text_x = @as(i32, @intFromFloat(button_x + button_width / 2.0)) - @divTrunc(text_width, 2);
+            const text_y = @as(i32, @intFromFloat(button_y + button_height / 2.0)) - @divTrunc(text_size, 2);
+            rl.DrawText(text_ptr, text_x, text_y, text_size, rl.WHITE);
+
+            // Draw theme preview colors
+            const preview_size: f32 = 20;
+            rl.DrawRectangle(@intFromFloat(button_x + 10), @intFromFloat(button_y + button_height / 2.0 - preview_size / 2.0), @intFromFloat(preview_size), @intFromFloat(preview_size), theme.light_square);
+            rl.DrawRectangle(@intFromFloat(button_x + 10 + preview_size), @intFromFloat(button_y + button_height / 2.0 - preview_size / 2.0), @intFromFloat(preview_size), @intFromFloat(preview_size), theme.dark_square);
+        }
+
+        // Draw back button
+        const back_y = start_y + @as(f32, @floatFromInt(ui.ALL_THEMES.len)) * (button_height + button_spacing) + 20;
+        const back_width: f32 = 150;
+        const back_x = center_x - back_width / 2.0;
+
+        const back_hovered = mouse_pos.x >= back_x and mouse_pos.x <= back_x + back_width and
+            mouse_pos.y >= back_y and mouse_pos.y <= back_y + button_height;
+
+        const back_bg = if (back_hovered) rl.Color{ .r = 100, .g = 60, .b = 60, .a = 255 } else rl.Color{ .r = 80, .g = 50, .b = 50, .a = 255 };
+        const back_border = if (back_hovered) rl.GOLD else rl.WHITE;
+
+        rl.DrawRectangle(@intFromFloat(back_x), @intFromFloat(back_y), @intFromFloat(back_width), @intFromFloat(button_height), back_bg);
+        rl.DrawRectangleLinesEx(rl.Rectangle{ .x = back_x, .y = back_y, .width = back_width, .height = button_height }, 2.0, back_border);
+
+        const back_text = "< Back";
+        const back_text_size: i32 = 24;
+        const back_text_width = rl.MeasureText(back_text, back_text_size);
+        const back_text_x = @as(i32, @intFromFloat(back_x + back_width / 2.0)) - @divTrunc(back_text_width, 2);
+        const back_text_y = @as(i32, @intFromFloat(back_y + button_height / 2.0)) - @divTrunc(back_text_size, 2);
+        rl.DrawText(back_text, back_text_x, back_text_y, back_text_size, rl.WHITE);
     }
 
     fn drawDifficultyMenu(self: *App) void {
