@@ -456,7 +456,7 @@ const App = struct {
     pub fn render(self: *App) !void {
         rl.BeginDrawing();
         defer rl.EndDrawing();
-        rl.ClearBackground(rl.Color{ .r = 40, .g = 40, .b = 40, .a = 255 });
+        rl.ClearBackground(rl.Color{ .r = 17, .g = 17, .b = 17, .a = 255 });
 
         switch (self.menu_state) {
             .main_menu => {
