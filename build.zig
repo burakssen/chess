@@ -86,7 +86,12 @@ pub fn build(b: *std.Build) !void {
             .settings = emcc_settings,
             .shell_file_path = b.path("index.html"),
             .install_dir = .{ .custom = "web" },
-            .preload_paths = &.{.{ .src_path = b.path("assets").getPath(b), .virtual_path = "assets" }},
+            .preload_paths = &.{
+                .{ .src_path = b.path("assets").getPath(b), .virtual_path = "assets" },
+                .{ .src_path = b.path("assets/default").getPath(b), .virtual_path = "assets/default" },
+                .{ .src_path = b.path("assets/bubblegum").getPath(b), .virtual_path = "assets/bubblegum" },
+                .{ .src_path = b.path("assets/neon").getPath(b), .virtual_path = "assets/neon" },
+            },
         });
         b.getInstallStep().dependOn(emcc_step);
 
