@@ -159,29 +159,21 @@ const App = struct {
 
         // Handle panel buttons
         if (InputHandler.isMousePressed()) {
-            const mouse_pos = InputHandler.getMousePosition();
+            const mouse_pos = rl.GetMousePosition();
             const button_width = (constants.PANEL_WIDTH - 60) / 2;
             const button_height = 40;
-            const buttons_y = constants.PANEL_Y + constants.PANEL_HEIGHT - 60;
+            const buttons_y = @as(f32, @floatFromInt(constants.PANEL_Y + constants.PANEL_HEIGHT - 60));
 
-            const undo_rect = rl.Rectangle{
-                .x = constants.PANEL_X + 20,
-                .y = buttons_y,
-                .width = button_width,
-                .height = button_height,
-            };
-            if (rl.CheckCollisionPointRec(mouse_pos, undo_rect)) {
+            const undo_x = @as(f32, @floatFromInt(constants.PANEL_X)) + 20;
+            const undo_rect = rl.Rectangle{ .x = undo_x, .y = buttons_y, .width = button_width, .height = button_height };
+            if (InputHandler.checkCollisionPointRec(mouse_pos, undo_rect)) {
                 self.undoMove();
                 return;
             }
 
-            const reset_rect = rl.Rectangle{
-                .x = constants.PANEL_X + 40 + button_width,
-                .y = buttons_y,
-                .width = button_width,
-                .height = button_height,
-            };
-            if (rl.CheckCollisionPointRec(mouse_pos, reset_rect)) {
+            const reset_x = @as(f32, @floatFromInt(constants.PANEL_X)) + 40 + button_width;
+            const reset_rect = rl.Rectangle{ .x = reset_x, .y = buttons_y, .width = button_width, .height = button_height };
+            if (InputHandler.checkCollisionPointRec(mouse_pos, reset_rect)) {
                 self.returnToMenu();
                 return;
             }
@@ -325,8 +317,8 @@ const App = struct {
     fn updateMainMenu(self: *App) void {
         const mouse_pos = InputHandler.getMousePosition();
         const center_x = @as(f32, @floatFromInt(constants.WINDOW_WIDTH)) / 2.0;
-        const start_y: f32 = 250;
-        const button_width: f32 = 300;
+        const start_y: f32 = 300;
+        const button_width: f32 = 350;
         const button_height: f32 = 60;
         const button_spacing: f32 = 20;
 
@@ -341,20 +333,16 @@ const App = struct {
             for (modes, 0..) |m, i| {
                 const button_y = start_y + @as(f32, @floatFromInt(i)) * (button_height + button_spacing);
                 const button_x = center_x - button_width / 2.0;
-
-                if (mouse_pos.x >= button_x and mouse_pos.x <= button_x + button_width and
-                    mouse_pos.y >= button_y and mouse_pos.y <= button_y + button_height)
-                {
+                const rect = rl.Rectangle{ .x = button_x, .y = button_y, .width = button_width, .height = button_height };
+                if (InputHandler.checkCollisionPointRec(mouse_pos, rect)) {
                     self.menu_selection.game_mode = m.mode;
                     self.menu_selection.selected_mode_index = i;
 
                     if (m.mode == .human_vs_human) {
-                        // No difficulty needed, start game directly
                         self.startGame() catch |err| {
                             std.debug.print("Failed to start game: {}\n", .{err});
                         };
                     } else {
-                        // Go to difficulty selection
                         self.menu_state = .difficulty_select;
                     }
                     return;
@@ -362,11 +350,12 @@ const App = struct {
             }
 
             // Check themes button
-            const themes_y = start_y + @as(f32, @floatFromInt(modes.len)) * (button_height + button_spacing) + 20;
-            const themes_x = center_x - button_width / 2.0;
-            if (mouse_pos.x >= themes_x and mouse_pos.x <= themes_x + button_width and
-                mouse_pos.y >= themes_y and mouse_pos.y <= themes_y + button_height)
-            {
+            const theme_button_width: f32 = 200;
+            const theme_button_height: f32 = 50;
+            const theme_x = @as(f32, @floatFromInt(constants.WINDOW_WIDTH)) - theme_button_width - 40;
+            const theme_y = @as(f32, @floatFromInt(constants.WINDOW_HEIGHT)) - theme_button_height - 40;
+            const theme_rect = rl.Rectangle{ .x = theme_x, .y = theme_y, .width = theme_button_width, .height = theme_button_height };
+            if (InputHandler.checkCollisionPointRec(mouse_pos, theme_rect)) {
                 self.menu_state = .theme_select;
             }
         }
@@ -376,8 +365,8 @@ const App = struct {
         const mouse_pos = InputHandler.getMousePosition();
         const center_x = @as(f32, @floatFromInt(constants.WINDOW_WIDTH)) / 2.0;
         const start_y: f32 = 280;
-        const button_width: f32 = 250;
-        const button_height: f32 = 60;
+        const button_width: f32 = 350;
+        const button_height: f32 = 80;
         const button_spacing: f32 = 20;
 
         const difficulties = [_]struct { diff: AIDifficulty, label: [*c]const u8 }{
@@ -386,38 +375,34 @@ const App = struct {
             .{ .diff = .hard, .label = "Hard" },
         };
 
-        // Handle back button (Escape or R key)
         if (rl.IsKeyPressed(rl.KEY_ESCAPE) or rl.IsKeyPressed(rl.KEY_BACKSPACE)) {
             self.menu_state = .main_menu;
             return;
         }
 
         if (InputHandler.isMousePressed()) {
-            // Check back button
-            const back_y: f32 = start_y + @as(f32, @floatFromInt(difficulties.len)) * (button_height + button_spacing) + 20;
-            const back_width: f32 = 150;
-            const back_x = center_x - back_width / 2.0;
-
-            if (mouse_pos.x >= back_x and mouse_pos.x <= back_x + back_width and
-                mouse_pos.y >= back_y and mouse_pos.y <= back_y + button_height)
-            {
-                self.menu_state = .main_menu;
-                return;
-            }
-
             // Check difficulty buttons
             for (difficulties, 0..) |d, i| {
                 const button_y = start_y + @as(f32, @floatFromInt(i)) * (button_height + button_spacing);
                 const button_x = center_x - button_width / 2.0;
-
-                if (mouse_pos.x >= button_x and mouse_pos.x <= button_x + button_width and
-                    mouse_pos.y >= button_y and mouse_pos.y <= button_y + button_height)
-                {
+                const rect = rl.Rectangle{ .x = button_x, .y = button_y, .width = button_width, .height = button_height };
+                if (InputHandler.checkCollisionPointRec(mouse_pos, rect)) {
                     self.menu_selection.difficulty = d.diff;
                     self.menu_selection.selected_difficulty_index = i;
                     try self.startGame();
-                    break;
+                    return;
                 }
+            }
+
+            // Check back button
+            const back_y = @as(f32, @floatFromInt(constants.WINDOW_HEIGHT)) - 100;
+            const back_width: f32 = 180;
+            const back_x = center_x - back_width / 2.0;
+            const back_rect = rl.Rectangle{ .x = back_x, .y = back_y, .width = back_width, .height = 60 };
+
+            if (InputHandler.checkCollisionPointRec(mouse_pos, back_rect)) {
+                self.menu_state = .main_menu;
+                return;
             }
         }
     }
@@ -466,21 +451,19 @@ const App = struct {
         const mouse_pos = InputHandler.getMousePosition();
         _ = self.promotion_state orelse return null;
 
-        // Use the same center + sizing logic as drawPromotionUI so hitbox matches visuals
         const board_center_x_i = constants.BOARD_OFFSET_X + constants.SQUARE_SIZE * 4;
         const board_center_y_i = constants.BOARD_OFFSET_Y + constants.SQUARE_SIZE * 4;
 
-        const box_width = @as(f32, @floatFromInt(constants.SQUARE_SIZE)) * 4.5;
-        const box_height = @as(f32, @floatFromInt(constants.SQUARE_SIZE)) * 1.5;
-        const piece_size = @as(f32, @floatFromInt(constants.SQUARE_SIZE)) * 0.8;
+        const box_width = @as(f32, @floatFromInt(constants.SQUARE_SIZE)) * 5.0;
+        const box_height = @as(f32, @floatFromInt(constants.SQUARE_SIZE)) * 2.0;
+        const piece_size = @as(f32, @floatFromInt(constants.SQUARE_SIZE)) * 1.0;
         const spacing = box_width / 4.0;
 
         const box_x = @as(f32, @floatFromInt(board_center_x_i)) - box_width / 2.0;
         const box_y = @as(f32, @floatFromInt(board_center_y_i)) - box_height / 2.0;
 
-        // Quick reject if mouse outside the promotion box
-        if (mouse_pos.x < box_x or mouse_pos.x > box_x + box_width or
-            mouse_pos.y < box_y or mouse_pos.y > box_y + box_height)
+        const box_rect = rl.Rectangle{ .x = box_x, .y = box_y, .width = box_width, .height = box_height };
+        if (!InputHandler.checkCollisionPointRec(mouse_pos, box_rect))
         {
             return null;
         }
@@ -493,8 +476,8 @@ const App = struct {
         for (pieces, 0..) |piece_type, i| {
             const piece_x = start_x + @as(f32, @floatFromInt(i)) * spacing;
 
-            if (mouse_pos.x >= piece_x and mouse_pos.x <= piece_x + piece_size and
-                mouse_pos.y >= piece_y and mouse_pos.y <= piece_y + piece_size)
+            const rect = rl.Rectangle{ .x = piece_x, .y = piece_y, .width = piece_size, .height = piece_size };
+            if (InputHandler.checkCollisionPointRec(mouse_pos, rect))
             {
                 return piece_type;
             }
@@ -506,7 +489,9 @@ const App = struct {
     pub fn render(self: *App) !void {
         rl.BeginDrawing();
         defer rl.EndDrawing();
-        rl.ClearBackground(rl.Color{ .r = 17, .g = 17, .b = 17, .a = 255 });
+
+        const current_theme = ui.ALL_THEMES[self.menu_selection.selected_theme_index];
+        rl.ClearBackground(current_theme.panel_bg);
 
         switch (self.menu_state) {
             .main_menu => {
@@ -567,7 +552,31 @@ const App = struct {
             self.drawPromotionUI(promo);
         }
 
-        // Draw game over overlay
+        // Draw Right Panel
+        renderer.drawRightPanel(game);
+
+        // Draw Control Buttons
+        const button_width = (constants.PANEL_WIDTH - 60) / 2;
+        const button_height = 40;
+        const buttons_y = @as(f32, @floatFromInt(constants.PANEL_Y + constants.PANEL_HEIGHT - 60));
+
+        const mouse_pos = rl.GetMousePosition();
+
+        // Undo Button
+        const undo_x = @as(f32, @floatFromInt(constants.PANEL_X)) + 20;
+        const undo_rect = rl.Rectangle{ .x = undo_x, .y = buttons_y, .width = button_width, .height = button_height };
+        const undo_hovered = InputHandler.checkCollisionPointRec(mouse_pos, undo_rect);
+
+        renderer.drawButton(undo_rect, "Undo", undo_hovered);
+
+        // Reset Button
+        const reset_x = @as(f32, @floatFromInt(constants.PANEL_X)) + 40 + button_width;
+        const reset_rect = rl.Rectangle{ .x = reset_x, .y = buttons_y, .width = button_width, .height = button_height };
+        const reset_hovered = InputHandler.checkCollisionPointRec(mouse_pos, reset_rect);
+
+        renderer.drawButton(reset_rect, "Reset", reset_hovered);
+
+        // Draw game over overlay last
         if (game.status != .ongoing) {
             const winner = if (game.status == .checkmate)
                 game.board.active_color.opposite()
@@ -575,47 +584,16 @@ const App = struct {
                 null;
             renderer.drawGameOver(game.status, winner);
         }
-
-        // Draw Right Panel
-        renderer.drawRightPanel(game.move_history.items);
-
-        // Draw Control Buttons
-        const button_width = (constants.PANEL_WIDTH - 60) / 2;
-        const button_height = 40;
-        const buttons_y = constants.PANEL_Y + constants.PANEL_HEIGHT - 60;
-
-        const mouse_pos = InputHandler.getMousePosition();
-
-        // Undo Button
-        const undo_rect = rl.Rectangle{
-            .x = constants.PANEL_X + 20,
-            .y = buttons_y,
-            .width = button_width,
-            .height = button_height,
-        };
-        const undo_hovered = rl.CheckCollisionPointRec(mouse_pos, undo_rect);
-        renderer.drawButton(undo_rect, "Undo", undo_hovered);
-
-        // Reset Button
-        const reset_rect = rl.Rectangle{
-            .x = constants.PANEL_X + 40 + button_width,
-            .y = buttons_y,
-            .width = button_width,
-            .height = button_height,
-        };
-        const reset_hovered = rl.CheckCollisionPointRec(mouse_pos, reset_rect);
-        renderer.drawButton(reset_rect, "Reset", reset_hovered);
     }
 
     fn updateThemeMenu(self: *App) void {
         const mouse_pos = InputHandler.getMousePosition();
         const center_x = @as(f32, @floatFromInt(constants.WINDOW_WIDTH)) / 2.0;
-        const start_y: f32 = 250;
-        const button_width: f32 = 300;
+        const start_y: f32 = 280;
+        const button_width: f32 = 350;
         const button_height: f32 = 60;
         const button_spacing: f32 = 20;
 
-        // Handle back button (Escape or R key)
         if (rl.IsKeyPressed(rl.KEY_ESCAPE) or rl.IsKeyPressed(rl.KEY_BACKSPACE)) {
             self.menu_state = .main_menu;
             return;
@@ -626,22 +604,22 @@ const App = struct {
             for (ui.ALL_THEMES, 0..) |_, i| {
                 const button_y = start_y + @as(f32, @floatFromInt(i)) * (button_height + button_spacing);
                 const button_x = center_x - button_width / 2.0;
+                const rect = rl.Rectangle{ .x = button_x, .y = button_y, .width = button_width, .height = button_height };
 
-                if (mouse_pos.x >= button_x and mouse_pos.x <= button_x + button_width and
-                    mouse_pos.y >= button_y and mouse_pos.y <= button_y + button_height)
+                if (InputHandler.checkCollisionPointRec(mouse_pos, rect))
                 {
                     self.menu_selection.selected_theme_index = i;
-                    // No need to start game, just select theme
+                    return;
                 }
             }
 
-            // Check back button
-            const back_y = start_y + @as(f32, @floatFromInt(ui.ALL_THEMES.len)) * (button_height + button_spacing) + 20;
-            const back_width: f32 = 150;
+// Check back button
+            const back_y = @as(f32, @floatFromInt(constants.WINDOW_HEIGHT)) - 100;
+            const back_width: f32 = 180;
             const back_x = center_x - back_width / 2.0;
+            const back_rect = rl.Rectangle{ .x = back_x, .y = back_y, .width = back_width, .height = button_height };
 
-            if (mouse_pos.x >= back_x and mouse_pos.x <= back_x + back_width and
-                mouse_pos.y >= back_y and mouse_pos.y <= back_y + button_height)
+            if (InputHandler.checkCollisionPointRec(mouse_pos, back_rect))
             {
                 self.menu_state = .main_menu;
                 return;
@@ -651,25 +629,27 @@ const App = struct {
 
     fn drawMainMenu(self: *App) void {
         const center_x = @as(f32, @floatFromInt(constants.WINDOW_WIDTH)) / 2.0;
-        const start_y: f32 = 250;
-        const button_width: f32 = 300;
+        const start_y: f32 = 300;
+        const button_width: f32 = 350;
         const button_height: f32 = 60;
         const button_spacing: f32 = 20;
 
+        const current_theme = ui.ALL_THEMES[self.menu_selection.selected_theme_index];
+
         // Draw title
         const title = "CHESS";
-        const title_size: i32 = 72;
+        const title_size: i32 = 120;
         const title_width = rl.MeasureText(title, title_size);
         const title_x = @divTrunc(constants.WINDOW_WIDTH - title_width, 2);
-        rl.DrawText(title, title_x + 3, 103, title_size, rl.BLACK);
-        rl.DrawText(title, title_x, 100, title_size, rl.GOLD);
+        rl.DrawText(title, title_x + 6, 106, title_size, rl.BLACK);
+        rl.DrawText(title, title_x, 100, title_size, current_theme.accent);
 
         // Draw subtitle
-        const subtitle = "Select Game Mode";
-        const subtitle_size: i32 = 28;
+        const subtitle = "Grandmaster Edition";
+        const subtitle_size: i32 = 32;
         const subtitle_width = rl.MeasureText(subtitle, subtitle_size);
         const subtitle_x = @divTrunc(constants.WINDOW_WIDTH - subtitle_width, 2);
-        rl.DrawText(subtitle, subtitle_x, 190, subtitle_size, rl.WHITE);
+        rl.DrawText(subtitle, subtitle_x, 220, subtitle_size, current_theme.text_secondary);
 
         const modes = [_][*c]const u8{
             "Player vs Player",
@@ -683,129 +663,123 @@ const App = struct {
         for (modes, 0..) |label, i| {
             const button_y = start_y + @as(f32, @floatFromInt(i)) * (button_height + button_spacing);
             const button_x = center_x - button_width / 2.0;
+            const rect = rl.Rectangle{ .x = button_x, .y = button_y, .width = button_width, .height = button_height };
 
-            // Check hover
-            const is_hovered = mouse_pos.x >= button_x and mouse_pos.x <= button_x + button_width and
-                mouse_pos.y >= button_y and mouse_pos.y <= button_y + button_height;
+            const is_hovered = InputHandler.checkCollisionPointRec(mouse_pos, rect);
 
-            const bg_color = if (is_hovered) rl.Color{ .r = 80, .g = 80, .b = 120, .a = 255 } else rl.Color{ .r = 60, .g = 60, .b = 80, .a = 255 };
-            const border_color = if (is_hovered) rl.GOLD else rl.WHITE;
+            const bg_color = if (is_hovered) current_theme.accent else current_theme.panel_bg;
+            const text_color = if (is_hovered) rl.BLACK else current_theme.text_primary;
 
-            rl.DrawRectangle(@intFromFloat(button_x), @intFromFloat(button_y), @intFromFloat(button_width), @intFromFloat(button_height), bg_color);
-            rl.DrawRectangleLinesEx(rl.Rectangle{ .x = button_x, .y = button_y, .width = button_width, .height = button_height }, 2.0, border_color);
+            rl.DrawRectangleRounded(rect, 0.2, 10, bg_color);
+            rl.DrawRectangleRoundedLines(rect, 0.2, 10, current_theme.accent);
 
-            const text_size: i32 = 24;
+            const text_size: i32 = 26;
             const text_width = rl.MeasureText(label, text_size);
             const text_x = @as(i32, @intFromFloat(button_x + button_width / 2.0)) - @divTrunc(text_width, 2);
             const text_y = @as(i32, @intFromFloat(button_y + button_height / 2.0)) - @divTrunc(text_size, 2);
-            rl.DrawText(label, text_x, text_y, text_size, rl.WHITE);
+            rl.DrawText(label, text_x, text_y, text_size, text_color);
         }
 
-        // Themes button
-        const themes_y = start_y + @as(f32, @floatFromInt(modes.len)) * (button_height + button_spacing) + 20;
-        const themes_x = center_x - button_width / 2.0;
-        const themes_hovered = mouse_pos.x >= themes_x and mouse_pos.x <= themes_x + button_width and
-            mouse_pos.y >= themes_y and mouse_pos.y <= themes_y + button_height;
+        // Themes button at bottom right
+        const theme_button_width: f32 = 200;
+        const theme_button_height: f32 = 50;
+        const theme_x = @as(f32, @floatFromInt(constants.WINDOW_WIDTH)) - theme_button_width - 40;
+        const theme_y = @as(f32, @floatFromInt(constants.WINDOW_HEIGHT)) - theme_button_height - 40;
+        const theme_rect = rl.Rectangle{ .x = theme_x, .y = theme_y, .width = theme_button_width, .height = theme_button_height };
+        const theme_hovered = InputHandler.checkCollisionPointRec(mouse_pos, theme_rect);
 
-        const themes_bg = if (themes_hovered) rl.Color{ .r = 100, .g = 100, .b = 100, .a = 255 } else rl.Color{ .r = 80, .g = 80, .b = 80, .a = 255 };
-        const themes_border = if (themes_hovered) rl.GOLD else rl.WHITE;
+        rl.DrawRectangleRounded(theme_rect, 0.3, 10, if (theme_hovered) current_theme.accent else current_theme.panel_bg);
+        rl.DrawRectangleRoundedLines(theme_rect, 0.3, 10, current_theme.accent);
 
-        rl.DrawRectangle(@intFromFloat(themes_x), @intFromFloat(themes_y), @intFromFloat(button_width), @intFromFloat(button_height), themes_bg);
-        rl.DrawRectangleLinesEx(rl.Rectangle{ .x = themes_x, .y = themes_y, .width = button_width, .height = button_height }, 2.0, themes_border);
-
-        const current_theme = ui.ALL_THEMES[self.menu_selection.selected_theme_index].name;
         var themes_label_buf: [64]u8 = undefined;
-        const themes_label = std.fmt.bufPrintZ(&themes_label_buf, "Theme: {s}", .{current_theme}) catch "Themes";
-
-        const themes_text_size: i32 = 24;
+        const themes_label = std.fmt.bufPrintZ(&themes_label_buf, "Theme: {s}", .{current_theme.name}) catch "Themes";
+        const themes_text_size: i32 = 20;
         const themes_text_width = rl.MeasureText(themes_label, themes_text_size);
-        const themes_text_x = @as(i32, @intFromFloat(themes_x + button_width / 2.0)) - @divTrunc(themes_text_width, 2);
-        const themes_text_y = @as(i32, @intFromFloat(themes_y + button_height / 2.0)) - @divTrunc(themes_text_size, 2);
-        rl.DrawText(themes_label, themes_text_x, themes_text_y, themes_text_size, rl.WHITE);
+        rl.DrawText(themes_label, @intFromFloat(theme_x + (theme_button_width - @as(f32, @floatFromInt(themes_text_width))) / 2.0), @intFromFloat(theme_y + (theme_button_height - @as(f32, @floatFromInt(themes_text_size))) / 2.0), themes_text_size, if (theme_hovered) rl.BLACK else current_theme.text_primary);
     }
 
     fn drawThemeMenu(self: *App) void {
         const center_x = @as(f32, @floatFromInt(constants.WINDOW_WIDTH)) / 2.0;
-        const start_y: f32 = 250;
-        const button_width: f32 = 300;
+        const start_y: f32 = 280;
+        const button_width: f32 = 350;
         const button_height: f32 = 60;
         const button_spacing: f32 = 20;
 
+        const current_theme_ui = ui.ALL_THEMES[self.menu_selection.selected_theme_index];
+
         // Draw title
         const title = "Select Theme";
-        const title_size: i32 = 48;
+        const title_size: i32 = 64;
         const title_width = rl.MeasureText(title, title_size);
         const title_x = @divTrunc(constants.WINDOW_WIDTH - title_width, 2);
-        rl.DrawText(title, title_x + 2, 152, title_size, rl.BLACK);
-        rl.DrawText(title, title_x, 150, title_size, rl.GOLD);
+        rl.DrawText(title, title_x + 4, 154, title_size, rl.BLACK);
+        rl.DrawText(title, title_x, 150, title_size, current_theme_ui.accent);
 
         const mouse_pos = InputHandler.getMousePosition();
 
-        for (ui.ALL_THEMES, 0..) |theme, i| {
+        for (&ui.ALL_THEMES, 0..) |theme, i| {
             const button_y = start_y + @as(f32, @floatFromInt(i)) * (button_height + button_spacing);
             const button_x = center_x - button_width / 2.0;
+            const rect = rl.Rectangle{ .x = button_x, .y = button_y, .width = button_width, .height = button_height };
 
-            const is_hovered = mouse_pos.x >= button_x and mouse_pos.x <= button_x + button_width and
-                mouse_pos.y >= button_y and mouse_pos.y <= button_y + button_height;
+            const is_hovered = InputHandler.checkCollisionPointRec(mouse_pos, rect);
             const is_selected = self.menu_selection.selected_theme_index == i;
 
-            var bg_color = if (is_hovered) rl.Color{ .r = 80, .g = 80, .b = 100, .a = 255 } else rl.Color{ .r = 60, .g = 60, .b = 80, .a = 255 };
-            if (is_selected) bg_color = rl.Color{ .r = 100, .g = 100, .b = 150, .a = 255 };
-            const border_color = if (is_selected or is_hovered) rl.GOLD else rl.WHITE;
+            // Use the theme's own colors for its preview button to make it clear what each theme looks like
+            const bg_color = if (is_selected or is_hovered) theme.accent else theme.panel_bg;
+            const text_color = if (is_selected or is_hovered) rl.BLACK else theme.text_primary;
 
-            rl.DrawRectangle(@intFromFloat(button_x), @intFromFloat(button_y), @intFromFloat(button_width), @intFromFloat(button_height), bg_color);
-            rl.DrawRectangleLinesEx(rl.Rectangle{ .x = button_x, .y = button_y, .width = button_width, .height = button_height }, 2.0, border_color);
+            rl.DrawRectangleRounded(rect, 0.2, 10, bg_color);
+            rl.DrawRectangleRoundedLines(rect, 0.2, 10, if (is_selected) theme.accent else current_theme_ui.accent);
 
-            const text_size: i32 = 24;
-            const text_ptr: [*c]const u8 = @ptrCast(theme.name.ptr);
-            const text_width = rl.MeasureText(text_ptr, text_size);
+            const text_size: i32 = 26;
+            // Safe null-terminated string for Raylib
+            var name_buf: [64:0]u8 = undefined;
+            const name_z = std.fmt.bufPrintZ(&name_buf, "{s}", .{theme.name}) catch "Theme";
+            const text_width = rl.MeasureText(name_z, text_size);
             const text_x = @as(i32, @intFromFloat(button_x + button_width / 2.0)) - @divTrunc(text_width, 2);
             const text_y = @as(i32, @intFromFloat(button_y + button_height / 2.0)) - @divTrunc(text_size, 2);
-            rl.DrawText(text_ptr, text_x, text_y, text_size, rl.WHITE);
+            rl.DrawText(name_z, text_x, text_y, text_size, text_color);
 
-            // Draw theme preview colors
-            const preview_size: f32 = 20;
-            rl.DrawRectangle(@intFromFloat(button_x + 10), @intFromFloat(button_y + button_height / 2.0 - preview_size / 2.0), @intFromFloat(preview_size), @intFromFloat(preview_size), theme.light_square);
-            rl.DrawRectangle(@intFromFloat(button_x + 10 + preview_size), @intFromFloat(button_y + button_height / 2.0 - preview_size / 2.0), @intFromFloat(preview_size), @intFromFloat(preview_size), theme.dark_square);
+            // Draw theme preview squares
+            const preview_size: f32 = 30;
+            rl.DrawRectangleRounded(rl.Rectangle{ .x = button_x + 20, .y = button_y + (button_height - preview_size) / 2.0, .width = preview_size, .height = preview_size }, 0.2, 5, theme.light_square);
+            rl.DrawRectangleRounded(rl.Rectangle{ .x = button_x + 20 + preview_size + 5, .y = button_y + (button_height - preview_size) / 2.0, .width = preview_size, .height = preview_size }, 0.2, 5, theme.dark_square);
         }
 
-        // Draw back button
-        const back_y = start_y + @as(f32, @floatFromInt(ui.ALL_THEMES.len)) * (button_height + button_spacing) + 20;
-        const back_width: f32 = 150;
+        // Back button
+        const back_y = @as(f32, @floatFromInt(constants.WINDOW_HEIGHT)) - 100;
+        const back_width: f32 = 180;
         const back_x = center_x - back_width / 2.0;
 
-        const back_hovered = mouse_pos.x >= back_x and mouse_pos.x <= back_x + back_width and
-            mouse_pos.y >= back_y and mouse_pos.y <= back_y + button_height;
+        const back_rect = rl.Rectangle{ .x = back_x, .y = back_y, .width = back_width, .height = button_height };
+        const back_hovered = InputHandler.checkCollisionPointRec(mouse_pos, back_rect);
 
-        const back_bg = if (back_hovered) rl.Color{ .r = 100, .g = 60, .b = 60, .a = 255 } else rl.Color{ .r = 80, .g = 50, .b = 50, .a = 255 };
-        const back_border = if (back_hovered) rl.GOLD else rl.WHITE;
-
-        rl.DrawRectangle(@intFromFloat(back_x), @intFromFloat(back_y), @intFromFloat(back_width), @intFromFloat(button_height), back_bg);
-        rl.DrawRectangleLinesEx(rl.Rectangle{ .x = back_x, .y = back_y, .width = back_width, .height = button_height }, 2.0, back_border);
+        rl.DrawRectangleRounded(back_rect, 0.3, 10, if (back_hovered) rl.RED else current_theme_ui.panel_bg);
+        rl.DrawRectangleRoundedLines(back_rect, 0.3, 10, if (back_hovered) rl.WHITE else current_theme_ui.accent);
 
         const back_text = "< Back";
         const back_text_size: i32 = 24;
         const back_text_width = rl.MeasureText(back_text, back_text_size);
-        const back_text_x = @as(i32, @intFromFloat(back_x + back_width / 2.0)) - @divTrunc(back_text_width, 2);
-        const back_text_y = @as(i32, @intFromFloat(back_y + button_height / 2.0)) - @divTrunc(back_text_size, 2);
-        rl.DrawText(back_text, back_text_x, back_text_y, back_text_size, rl.WHITE);
+        rl.DrawText(back_text, @intFromFloat(back_x + (back_width - @as(f32, @floatFromInt(back_text_width))) / 2.0), @intFromFloat(back_y + (button_height - @as(f32, @floatFromInt(back_text_size))) / 2.0), back_text_size, if (back_hovered) rl.WHITE else current_theme_ui.text_primary);
     }
 
     fn drawDifficultyMenu(self: *App) void {
-        _ = self;
         const center_x = @as(f32, @floatFromInt(constants.WINDOW_WIDTH)) / 2.0;
         const start_y: f32 = 280;
-        const button_width: f32 = 250;
-        const button_height: f32 = 60;
+        const button_width: f32 = 350;
+        const button_height: f32 = 80;
         const button_spacing: f32 = 20;
+
+        const current_theme_ui = ui.ALL_THEMES[self.menu_selection.selected_theme_index];
 
         // Draw title
         const title = "Select Difficulty";
-        const title_size: i32 = 48;
+        const title_size: i32 = 64;
         const title_width = rl.MeasureText(title, title_size);
         const title_x = @divTrunc(constants.WINDOW_WIDTH - title_width, 2);
-        rl.DrawText(title, title_x + 2, 152, title_size, rl.BLACK);
-        rl.DrawText(title, title_x, 150, title_size, rl.GOLD);
+        rl.DrawText(title, title_x + 4, 154, title_size, rl.BLACK);
+        rl.DrawText(title, title_x, 150, title_size, current_theme_ui.accent);
 
         const difficulties = [_]struct { label: [*c]const u8, desc: [*c]const u8 }{
             .{ .label = "Easy", .desc = "Random moves" },
@@ -818,71 +792,60 @@ const App = struct {
         for (difficulties, 0..) |d, i| {
             const button_y = start_y + @as(f32, @floatFromInt(i)) * (button_height + button_spacing);
             const button_x = center_x - button_width / 2.0;
+            const rect = rl.Rectangle{ .x = button_x, .y = button_y, .width = button_width, .height = button_height };
 
-            const is_hovered = mouse_pos.x >= button_x and mouse_pos.x <= button_x + button_width and
-                mouse_pos.y >= button_y and mouse_pos.y <= button_y + button_height;
+            const is_hovered = InputHandler.checkCollisionPointRec(mouse_pos, rect);
 
-            const bg_color = if (is_hovered) rl.Color{ .r = 80, .g = 100, .b = 80, .a = 255 } else rl.Color{ .r = 60, .g = 80, .b = 60, .a = 255 };
-            const border_color = if (is_hovered) rl.GOLD else rl.WHITE;
+            const bg_color = if (is_hovered) current_theme_ui.accent else current_theme_ui.panel_bg;
+            const text_color = if (is_hovered) rl.BLACK else current_theme_ui.text_primary;
+            const desc_color = if (is_hovered) rl.DARKGRAY else current_theme_ui.text_secondary;
 
-            rl.DrawRectangle(@intFromFloat(button_x), @intFromFloat(button_y), @intFromFloat(button_width), @intFromFloat(button_height), bg_color);
-            rl.DrawRectangleLinesEx(rl.Rectangle{ .x = button_x, .y = button_y, .width = button_width, .height = button_height }, 2.0, border_color);
+            rl.DrawRectangleRounded(rect, 0.2, 10, bg_color);
+            rl.DrawRectangleRoundedLines(rect, 0.2, 10, current_theme_ui.accent);
 
-            const text_size: i32 = 28;
+            const text_size: i32 = 32;
             const text_width = rl.MeasureText(d.label, text_size);
             const text_x = @as(i32, @intFromFloat(button_x + button_width / 2.0)) - @divTrunc(text_width, 2);
-            const text_y = @as(i32, @intFromFloat(button_y + 10));
-            rl.DrawText(d.label, text_x, text_y, text_size, rl.WHITE);
+            const text_y = @as(i32, @intFromFloat(button_y + 15));
+            rl.DrawText(d.label, text_x, text_y, text_size, text_color);
 
-            // Draw description
-            const desc_size: i32 = 14;
+            const desc_size: i32 = 18;
             const desc_width = rl.MeasureText(d.desc, desc_size);
             const desc_x = @as(i32, @intFromFloat(button_x + button_width / 2.0)) - @divTrunc(desc_width, 2);
-            const desc_y = text_y + text_size + 2;
-            rl.DrawText(d.desc, desc_x, desc_y, desc_size, rl.LIGHTGRAY);
+            const desc_y = text_y + text_size + 5;
+            rl.DrawText(d.desc, desc_x, desc_y, desc_size, desc_color);
         }
 
-        // Draw back button
-        const back_y: f32 = start_y + @as(f32, @floatFromInt(difficulties.len)) * (button_height + button_spacing) + 20;
-        const back_width: f32 = 150;
+        // Back button
+        // Back button
+        const back_y = @as(f32, @floatFromInt(constants.WINDOW_HEIGHT)) - 100;
+        const back_width: f32 = 180;
         const back_x = center_x - back_width / 2.0;
 
-        const back_hovered = mouse_pos.x >= back_x and mouse_pos.x <= back_x + back_width and
-            mouse_pos.y >= back_y and mouse_pos.y <= back_y + button_height;
+        const back_rect = rl.Rectangle{ .x = back_x, .y = back_y, .width = back_width, .height = 60 };
+        const back_hovered = InputHandler.checkCollisionPointRec(mouse_pos, back_rect);
 
-        const back_bg = if (back_hovered) rl.Color{ .r = 100, .g = 60, .b = 60, .a = 255 } else rl.Color{ .r = 80, .g = 50, .b = 50, .a = 255 };
-        const back_border = if (back_hovered) rl.GOLD else rl.WHITE;
-
-        rl.DrawRectangle(@intFromFloat(back_x), @intFromFloat(back_y), @intFromFloat(back_width), @intFromFloat(button_height), back_bg);
-        rl.DrawRectangleLinesEx(rl.Rectangle{ .x = back_x, .y = back_y, .width = back_width, .height = button_height }, 2.0, back_border);
+        rl.DrawRectangleRounded(back_rect, 0.3, 10, if (back_hovered) rl.RED else current_theme_ui.panel_bg);
+        rl.DrawRectangleRoundedLines(back_rect, 0.3, 10, if (back_hovered) rl.WHITE else current_theme_ui.accent);
 
         const back_text = "< Back";
         const back_text_size: i32 = 24;
         const back_text_width = rl.MeasureText(back_text, back_text_size);
-        const back_text_x = @as(i32, @intFromFloat(back_x + back_width / 2.0)) - @divTrunc(back_text_width, 2);
-        const back_text_y = @as(i32, @intFromFloat(back_y + button_height / 2.0)) - @divTrunc(back_text_size, 2);
-        rl.DrawText(back_text, back_text_x, back_text_y, back_text_size, rl.WHITE);
-
-        // Draw hint
-        const hint = "Press ESC or Backspace to go back";
-        const hint_size: i32 = 16;
-        const hint_width = rl.MeasureText(hint, hint_size);
-        const hint_x = @divTrunc(constants.WINDOW_WIDTH - hint_width, 2);
-        rl.DrawText(hint, hint_x, constants.WINDOW_HEIGHT - 50, hint_size, rl.GRAY);
+        rl.DrawText(back_text, @intFromFloat(back_x + (back_width - @as(f32, @floatFromInt(back_text_width))) / 2.0), @intFromFloat(back_y + (60 - @as(f32, @floatFromInt(back_text_size))) / 2.0), back_text_size, if (back_hovered) rl.WHITE else current_theme_ui.text_primary);
     }
 
     fn drawPromotionUI(self: *App, promo: PromotionState) void {
         const renderer = &(self.renderer orelse return);
-        // Calculate position (center of board)
+        const current_theme = ui.ALL_THEMES[self.menu_selection.selected_theme_index];
+
         const board_center_x = constants.BOARD_OFFSET_X + constants.SQUARE_SIZE * 4;
         const board_center_y = constants.BOARD_OFFSET_Y + constants.SQUARE_SIZE * 4;
 
-        const box_width = @as(f32, @floatFromInt(constants.SQUARE_SIZE)) * 4.5;
-        const box_height = @as(f32, @floatFromInt(constants.SQUARE_SIZE)) * 1.5;
-        const piece_size = @as(f32, @floatFromInt(constants.SQUARE_SIZE)) * 0.8;
+        const box_width = @as(f32, @floatFromInt(constants.SQUARE_SIZE)) * 5.0;
+        const box_height = @as(f32, @floatFromInt(constants.SQUARE_SIZE)) * 2.0;
+        const piece_size = @as(f32, @floatFromInt(constants.SQUARE_SIZE)) * 1.0;
         const spacing = box_width / 4.0;
 
-        // Fixed: Use float division consistently
         const box_x = @as(f32, @floatFromInt(board_center_x)) - box_width / 2.0;
         const box_y = @as(f32, @floatFromInt(board_center_y)) - box_height / 2.0;
 
@@ -890,38 +853,36 @@ const App = struct {
         rl.DrawRectangle(0, 0, constants.WINDOW_WIDTH, constants.WINDOW_HEIGHT, rl.Color{ .r = 0, .g = 0, .b = 0, .a = 180 });
 
         // Draw promotion box
-        rl.DrawRectangle(@intFromFloat(box_x), @intFromFloat(box_y), @intFromFloat(box_width), @intFromFloat(box_height), rl.Color{ .r = 60, .g = 60, .b = 60, .a = 255 });
+        const box_rect = rl.Rectangle{ .x = box_x, .y = box_y, .width = box_width, .height = box_height };
+        rl.DrawRectangleRounded(box_rect, 0.1, 10, current_theme.panel_bg);
+        rl.DrawRectangleRoundedLines(box_rect, 0.1, 10, current_theme.accent);
 
-        rl.DrawRectangleLines(@intFromFloat(box_x), @intFromFloat(box_y), @intFromFloat(box_width), @intFromFloat(box_height), rl.WHITE);
+        // Draw title text
+        const title = "Choose Promotion";
+        const title_size: i32 = 32;
+        const title_width = rl.MeasureText(title, title_size);
+        const title_x = @as(i32, @intFromFloat(board_center_x)) - @divTrunc(title_width, 2);
+        const title_y = @as(i32, @intFromFloat(box_y - 50));
+        rl.DrawText(title, title_x, title_y, title_size, current_theme.accent);
 
         // Draw piece options
         const pieces = [_]PieceType{ .Queen, .Rook, .Bishop, .Knight };
         const piece_y = box_y + (box_height - piece_size) / 2.0;
         const start_x = box_x + (spacing - piece_size) / 2.0;
 
-        for (pieces, 0..) |piece_type, i| {
-            const piece_x = start_x + @as(f32, @floatFromInt(i)) * spacing;
-
-            // Highlight on hover
-            const mouse_pos = InputHandler.getMousePosition();
-            if (mouse_pos.x >= piece_x and mouse_pos.x <= piece_x + piece_size and
-                mouse_pos.y >= piece_y and mouse_pos.y <= piece_y + piece_size)
-            {
-                rl.DrawRectangle(@intFromFloat(piece_x), @intFromFloat(piece_y), @intFromFloat(piece_size), @intFromFloat(piece_size), rl.Color{ .r = 100, .g = 100, .b = 100, .a = 255 });
-            }
-
-            // Draw piece
+                for (pieces, 0..) |piece_type, i| {
+                    const piece_x = start_x + @as(f32, @floatFromInt(i)) * spacing;
+        
+                    const mouse_pos = InputHandler.getMousePosition();
+                    const rect = rl.Rectangle{ .x = piece_x, .y = piece_y, .width = piece_size, .height = piece_size };
+                    const is_hovered = InputHandler.checkCollisionPointRec(mouse_pos, rect);
+        
+                    if (is_hovered) {
+                        rl.DrawRectangleRounded(rl.Rectangle{ .x = piece_x, .y = piece_y, .width = piece_size, .height = piece_size }, 0.2, 5, rl.Fade(current_theme.accent, 0.3));
+                    }
             const piece = Piece.init(promo.piece.getColor(), piece_type);
             renderer.drawPieceAt(piece, piece_x, piece_y, piece_size);
         }
-
-        // Draw title text
-        const title = "Choose Promotion:";
-        const title_size: i32 = 24;
-        const title_width = rl.MeasureText(title, title_size);
-        const title_x = @as(i32, @intFromFloat(board_center_x)) - @divTrunc(title_width, 2);
-        const title_y = @as(i32, @intFromFloat(box_y - 40));
-        rl.DrawText(title, title_x, title_y, title_size, rl.WHITE);
     }
 
     pub fn run(self: *App) !void {

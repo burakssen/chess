@@ -3,6 +3,7 @@ const rl = @import("raylib.zig").rl;
 
 const engine = @import("engine");
 const Board = engine.Board;
+const ChessGame = engine.ChessGame;
 
 const core = @import("core");
 const Piece = core.Piece;
@@ -55,7 +56,7 @@ pub const Renderer = struct {
     pub fn beginFrame(self: *Renderer) void {
         _ = self;
         rl.BeginDrawing();
-        rl.ClearBackground(rl.Color{ .r = 40, .g = 40, .b = 40, .a = 255 });
+        rl.ClearBackground(rl.Color{ .r = 20, .g = 20, .b = 20, .a = 255 });
     }
 
     pub fn endFrame(self: *Renderer) void {
@@ -64,17 +65,35 @@ pub const Renderer = struct {
     }
 
     pub fn drawBoard(self: *Renderer) void {
+        // Draw board shadow/outer border
+        const shadow_rect = rl.Rectangle{
+            .x = @as(f32, @floatFromInt(constants.BOARD_OFFSET_X)) - 5,
+            .y = @as(f32, @floatFromInt(constants.BOARD_OFFSET_Y)) - 5,
+            .width = @as(f32, @floatFromInt(constants.BOARD_SIZE)) + 10,
+            .height = @as(f32, @floatFromInt(constants.BOARD_SIZE)) + 10,
+        };
+        rl.DrawRectangleRounded(shadow_rect, 0.02, 10, rl.Color{ .r = 0, .g = 0, .b = 0, .a = 150 });
+        
+        // Draw board background
+        const board_rect = rl.Rectangle{
+            .x = @floatFromInt(constants.BOARD_OFFSET_X),
+            .y = @floatFromInt(constants.BOARD_OFFSET_Y),
+            .width = @floatFromInt(constants.BOARD_SIZE),
+            .height = @floatFromInt(constants.BOARD_SIZE),
+        };
+        rl.DrawRectangleRec(board_rect, self.theme.dark_square);
+
         for (0..8) |rank_idx| {
             for (0..8) |file_idx| {
                 const rank: u8 = @intCast(rank_idx);
                 const file: u8 = @intCast(file_idx);
                 const is_light_orig = (rank + file) % 2 == 0;
-                const color = if (is_light_orig) self.theme.light_square else self.theme.dark_square;
-
-                const x = constants.BOARD_OFFSET_X + @as(i32, @intCast(file)) * constants.SQUARE_SIZE;
-                const y = constants.BOARD_OFFSET_Y + @as(i32, @intCast(7 - rank)) * constants.SQUARE_SIZE;
-
-                rl.DrawRectangle(x, y, constants.SQUARE_SIZE, constants.SQUARE_SIZE, color);
+                
+                if (is_light_orig) {
+                    const x = constants.BOARD_OFFSET_X + @as(i32, @intCast(file)) * constants.SQUARE_SIZE;
+                    const y = constants.BOARD_OFFSET_Y + @as(i32, @intCast(7 - rank)) * constants.SQUARE_SIZE;
+                    rl.DrawRectangle(x, y, constants.SQUARE_SIZE, constants.SQUARE_SIZE, self.theme.light_square);
+                }
             }
         }
 
@@ -82,18 +101,17 @@ pub const Renderer = struct {
     }
 
     fn drawCoordinates(self: *Renderer) void {
-        const font_size = 16;
+        const font_size = 18;
 
         // Draw files (a-h) on the bottom rank squares
         for (0..8) |file_idx| {
             const label: [2]u8 = .{ @as(u8, @intCast(file_idx)) + 'a', 0 };
             const label_ptr: [*c]const u8 = @ptrCast(&label);
 
-            // Position at bottom-right of each square in the bottom rank (rank 0)
             const x = constants.BOARD_OFFSET_X + @as(i32, @intCast(file_idx)) * constants.SQUARE_SIZE + constants.SQUARE_SIZE - 15;
-            const y = constants.BOARD_OFFSET_Y + 7 * constants.SQUARE_SIZE + constants.SQUARE_SIZE - 20;
+            const y = constants.BOARD_OFFSET_Y + 7 * constants.SQUARE_SIZE + constants.SQUARE_SIZE - 22;
 
-            const is_light = file_idx % 2 != 0; // Rank 0, so (0 + file_idx) % 2
+            const is_light = file_idx % 2 != 0;
             const color = if (is_light) self.theme.dark_square else self.theme.light_square;
 
             rl.DrawText(label_ptr, x, y, font_size, color);
@@ -104,11 +122,10 @@ pub const Renderer = struct {
             const label: [2]u8 = .{ @as(u8, @intCast(rank_idx)) + '1', 0 };
             const label_ptr: [*c]const u8 = @ptrCast(&label);
 
-            // Position at top-left of each square in the 'a' file (file 0)
             const x = constants.BOARD_OFFSET_X + 5;
             const y = constants.BOARD_OFFSET_Y + @as(i32, @intCast(7 - rank_idx)) * constants.SQUARE_SIZE + 5;
 
-            const is_light = rank_idx % 2 != 0; // File 0, so (rank_idx + 0) % 2
+            const is_light = rank_idx % 2 != 0;
             const color = if (is_light) self.theme.dark_square else self.theme.light_square;
 
             rl.DrawText(label_ptr, x, y, font_size, color);
@@ -129,7 +146,12 @@ pub const Renderer = struct {
         _ = self;
         const pos = squareToScreen(king_square);
         const color = rl.Fade(rl.RED, 0.5);
-        rl.DrawRectangle(@intFromFloat(pos.x), @intFromFloat(pos.y), constants.SQUARE_SIZE, constants.SQUARE_SIZE, color);
+        
+        // Draw a glowing effect for check
+        const x = @as(i32, @intFromFloat(pos.x));
+        const y = @as(i32, @intFromFloat(pos.y));
+        rl.DrawRectangle(x, y, constants.SQUARE_SIZE, constants.SQUARE_SIZE, color);
+        rl.DrawRectangleLinesEx(rl.Rectangle{ .x = pos.x, .y = pos.y, .width = @floatFromInt(constants.SQUARE_SIZE), .height = @floatFromInt(constants.SQUARE_SIZE) }, 3, rl.RED);
     }
 
     pub fn drawSelectedSquare(self: *Renderer, square: Square) void {
@@ -149,21 +171,19 @@ pub const Renderer = struct {
             const target_piece = board.getPiece(move.to);
 
             if (target_piece.isEmpty()) {
-                // Draw circle for empty square moves
                 const center_x = @as(i32, @intFromFloat(pos.x)) + constants.SQUARE_SIZE / 2;
                 const center_y = @as(i32, @intFromFloat(pos.y)) + constants.SQUARE_SIZE / 2;
-                rl.DrawCircle(center_x, center_y, constants.SQUARE_SIZE / 6, rl.Fade(self.theme.highlight_color, 0.5));
+                rl.DrawCircle(center_x, center_y, constants.SQUARE_SIZE / 6, rl.Fade(self.theme.highlight_color, 0.3));
             } else {
-                // Draw ring for capture moves
                 rl.DrawRectangleLinesEx(
                     rl.Rectangle{
                         .x = pos.x + 4,
                         .y = pos.y + 4,
-                        .width = constants.SQUARE_SIZE - 8,
-                        .height = constants.SQUARE_SIZE - 8,
+                        .width = @as(f32, @floatFromInt(constants.SQUARE_SIZE)) - 8,
+                        .height = @as(f32, @floatFromInt(constants.SQUARE_SIZE)) - 8,
                     },
-                    4.0,
-                    self.theme.highlight_color,
+                    5.0,
+                    rl.Fade(self.theme.highlight_color, 0.4),
                 );
             }
         }
@@ -174,12 +194,10 @@ pub const Renderer = struct {
             const square = Square.fromIndex(@intCast(i));
             const piece = board.getPiece(square);
 
-            // Skip if this piece is being dragged
             if (dragging) |drag| {
                 if (drag.from == square) continue;
             }
 
-            // Skip if this piece is being animated
             if (animation) |anim| {
                 if (anim.move.from == square) continue;
             }
@@ -190,7 +208,6 @@ pub const Renderer = struct {
             }
         }
 
-        // Draw animating piece on top
         if (animation) |anim| {
             const start_pos = squareToScreen(anim.move.from);
             const end_pos = squareToScreen(anim.move.to);
@@ -204,146 +221,114 @@ pub const Renderer = struct {
     }
 
     pub fn drawDraggedPiece(self: *Renderer, piece: Piece, mouse_pos: rl.Vector2) void {
-        const piece_x = mouse_pos.x - @as(f32, @floatFromInt(constants.SQUARE_SIZE)) / 2.0;
-        const piece_y = mouse_pos.y - @as(f32, @floatFromInt(constants.SQUARE_SIZE)) / 2.0;
+        const piece_x = mouse_pos.x - @as(f32, @floatFromInt(constants.SQUARE_SIZE)) * 0.5;
+        const piece_y = mouse_pos.y - @as(f32, @floatFromInt(constants.SQUARE_SIZE)) * 0.5;
+        
+        // Draw shadow under dragged piece
+        rl.DrawCircle(@intFromFloat(mouse_pos.x), @intFromFloat(mouse_pos.y + 5), @as(f32, @floatFromInt(constants.SQUARE_SIZE)) * 0.4, rl.Fade(rl.BLACK, 0.3));
+        
         self.drawPiece(piece, piece_x, piece_y);
     }
 
     pub fn drawGameOver(self: *Renderer, status: GameStatus, winner: ?Color) void {
-        _ = self;
-        // Semi-transparent overlay
-        rl.DrawRectangle(
-            0,
-            0,
-            constants.WINDOW_WIDTH,
-            constants.WINDOW_HEIGHT,
-            rl.Color{ .r = 0, .g = 0, .b = 0, .a = 180 },
-        );
+        // Full screen dimming
+        rl.DrawRectangle(0, 0, constants.WINDOW_WIDTH, constants.WINDOW_HEIGHT, rl.Color{ .r = 0, .g = 0, .b = 0, .a = 180 });
+
+        const card_width: f32 = 540;
+        const card_height: f32 = 320;
+        const card_x = (@as(f32, @floatFromInt(constants.WINDOW_WIDTH)) - card_width) / 2.0;
+        const card_y = (@as(f32, @floatFromInt(constants.WINDOW_HEIGHT)) - card_height) / 2.0;
+
+        const card_rect = rl.Rectangle{ .x = card_x, .y = card_y, .width = card_width, .height = card_height };
+        
+        // Draw card shadow
+        rl.DrawRectangleRounded(rl.Rectangle{ .x = card_x + 6, .y = card_y + 6, .width = card_width, .height = card_height }, 0.1, 10, rl.Fade(rl.BLACK, 0.5));
+        
+        // Draw card background
+        rl.DrawRectangleRounded(card_rect, 0.1, 10, self.theme.panel_bg);
+        rl.DrawRectangleRoundedLines(card_rect, 0.1, 10, self.theme.accent);
+
+        const title: [*c]const u8 = "Game Over";
+        const title_size = 32;
+        const title_width = rl.MeasureText(title, title_size);
+        rl.DrawText(title, @intFromFloat(card_x + (card_width - @as(f32, @floatFromInt(title_width))) / 2.0), @intFromFloat(card_y + 30), title_size, self.theme.text_secondary);
 
         const message: [*c]const u8 = switch (status) {
-            .checkmate => if (winner == .Black)
-                "Checkmate! Black Wins!"
-            else
-                "Checkmate! White Wins!",
-            .stalemate => "Stalemate! Draw!",
+            .checkmate => if (winner == .Black) "Black Wins by Checkmate!" else "White Wins by Checkmate!",
+            .stalemate => "Draw by Stalemate!",
             .ongoing => unreachable,
         };
 
-        const subtitle: [*c]const u8 = "Press R or Click to Reset";
+        const msg_size = 36;
+        const msg_width = rl.MeasureText(message, msg_size);
+        rl.DrawText(message, @intFromFloat(card_x + (card_width - @as(f32, @floatFromInt(msg_width))) / 2.0), @intFromFloat(card_y + 110), msg_size, self.theme.accent);
 
-        const font_size = 60;
-        const subtitle_size = 30;
-        const text_width = rl.MeasureText(message, font_size);
-        const subtitle_width = rl.MeasureText(subtitle, subtitle_size);
-
-        const text_x = @divTrunc(constants.WINDOW_WIDTH - text_width, 2);
-        const text_y = @divTrunc(constants.WINDOW_HEIGHT, 2) - 50;
-
-        // Draw text shadow
-        rl.DrawText(message, text_x + 3, text_y + 3, font_size, rl.BLACK);
-        rl.DrawText(message, text_x, text_y, font_size, rl.GOLD);
-
-        // Draw subtitle
-        const subtitle_x = @divTrunc(constants.WINDOW_WIDTH - subtitle_width, 2);
-        const subtitle_y = text_y + 80;
-        rl.DrawText(subtitle, subtitle_x + 2, subtitle_y + 2, subtitle_size, rl.BLACK);
-        rl.DrawText(subtitle, subtitle_x, subtitle_y, subtitle_size, rl.WHITE);
+        const subtitle: [*c]const u8 = "Press R or Click to Play Again";
+        const sub_size = 24;
+        const sub_width = rl.MeasureText(subtitle, sub_size);
+        rl.DrawText(subtitle, @intFromFloat(card_x + (card_width - @as(f32, @floatFromInt(sub_width))) / 2.0), @intFromFloat(card_y + 220), sub_size, self.theme.text_primary);
+        
+        // Pulse effect for the border
+        const time = @as(f32, @floatCast(rl.GetTime()));
+        const alpha = 0.3 + 0.3 * @sin(time * 3.0);
+        rl.DrawRectangleRoundedLines(card_rect, 0.1, 10, rl.Fade(self.theme.accent, alpha));
     }
 
     fn drawPiece(self: *Renderer, piece: Piece, x: f32, y: f32) void {
         if (self.assets.getTexture(piece)) |texture| {
             const scale = @as(f32, @floatFromInt(constants.SQUARE_SIZE)) / @as(f32, @floatFromInt(texture.width));
-            rl.DrawTextureEx(
-                texture,
-                rl.Vector2{ .x = x, .y = y },
-                0.0,
-                scale,
-                rl.WHITE,
-            );
+            rl.DrawTextureEx(texture, rl.Vector2{ .x = x, .y = y }, 0.0, scale, rl.WHITE);
         } else {
-            // Fallback: draw text symbol
             const symbol_ptr: [*c]const u8 = @ptrCast(piece.symbol().ptr);
-            rl.DrawText(
-                symbol_ptr,
-                @intFromFloat(x + @as(f32, @floatFromInt(constants.SQUARE_SIZE)) / 2),
-                @intFromFloat(y + @as(f32, @floatFromInt(constants.SQUARE_SIZE)) / 2),
-                40,
-                rl.RED,
-            );
+            rl.DrawText(symbol_ptr, @intFromFloat(x + @as(f32, @floatFromInt(constants.SQUARE_SIZE)) / 4), @intFromFloat(y + @as(f32, @floatFromInt(constants.SQUARE_SIZE)) / 4), 48, rl.RED);
         }
     }
 
     pub fn drawPieceAt(self: *Renderer, piece: Piece, x: f32, y: f32, size: f32) void {
         if (self.assets.getTexture(piece)) |texture| {
             const scale = size / @as(f32, @floatFromInt(texture.width));
-            // The texture will be scaled to 'size', so just draw at x, y
-            const position = rl.Vector2{
-                .x = x,
-                .y = y,
-            };
-            rl.DrawTextureEx(
-                texture,
-                position,
-                0.0,
-                scale,
-                rl.WHITE,
-            );
+            rl.DrawTextureEx(texture, rl.Vector2{ .x = x, .y = y }, 0.0, scale, rl.WHITE);
         } else {
-            // Fallback: draw text symbol centered
             const symbol_ptr: [*c]const u8 = @ptrCast(piece.symbol().ptr);
-            const text_size: i32 = 40;
-            const text_width = rl.MeasureText(symbol_ptr, text_size);
-            rl.DrawText(
-                symbol_ptr,
-                @intFromFloat(x + (size - @as(f32, @floatFromInt(text_width))) / 2.0),
-                @intFromFloat(y + (size - @as(f32, @floatFromInt(text_size))) / 2.0),
-                text_size,
-                rl.RED,
-            );
+            rl.DrawText(symbol_ptr, @intFromFloat(x), @intFromFloat(y), @intFromFloat(size), rl.RED);
         }
     }
 
-    pub fn drawRightPanel(self: *Renderer, move_history: []const Move) void {
-        _ = self;
+    pub fn drawRightPanel(self: *Renderer, game: *const ChessGame) void {
+        const panel_rect = rl.Rectangle{
+            .x = @floatFromInt(constants.PANEL_X),
+            .y = @floatFromInt(constants.PANEL_Y),
+            .width = @floatFromInt(constants.PANEL_WIDTH),
+            .height = @floatFromInt(constants.PANEL_HEIGHT),
+        };
+
+        // Panel Shadow
+        rl.DrawRectangleRounded(rl.Rectangle{ .x = panel_rect.x + 5, .y = panel_rect.y + 5, .width = panel_rect.width, .height = panel_rect.height }, constants.CORNER_RADIUS, 10, rl.Fade(rl.BLACK, 0.4));
+        
         // Panel Background
-        rl.DrawRectangle(
-            constants.PANEL_X,
-            constants.PANEL_Y,
-            constants.PANEL_WIDTH,
-            constants.PANEL_HEIGHT,
-            rl.Color{ .r = 45, .g = 45, .b = 45, .a = 255 },
-        );
-        rl.DrawRectangleLines(
-            constants.PANEL_X,
-            constants.PANEL_Y,
-            constants.PANEL_WIDTH,
-            constants.PANEL_HEIGHT,
-            rl.Color{ .r = 60, .g = 60, .b = 60, .a = 255 },
-        );
+        rl.DrawRectangleRounded(panel_rect, constants.CORNER_RADIUS, 10, self.theme.panel_bg);
+        rl.DrawRectangleRoundedLines(panel_rect, constants.CORNER_RADIUS, 10, self.theme.panel_border);
+
+        // Turn Indicator
+        self.drawTurnIndicator(game.board.active_color);
 
         // Header
         const header = "Move History";
-        const header_size = 24;
+        const header_size = 28;
         const header_width = rl.MeasureText(header, header_size);
-        rl.DrawText(
-            header,
-            constants.PANEL_X + @divTrunc(constants.PANEL_WIDTH - header_width, 2),
-            constants.PANEL_Y + 20,
-            header_size,
-            rl.LIGHTGRAY,
-        );
+        rl.DrawText(header, constants.PANEL_X + @divTrunc(constants.PANEL_WIDTH - header_width, 2), constants.PANEL_Y + 100, header_size, self.theme.text_primary);
+
+        // Separator
+        rl.DrawLine(constants.PANEL_X + 40, constants.PANEL_Y + 140, constants.PANEL_X + constants.PANEL_WIDTH - 40, constants.PANEL_Y + 140, rl.Fade(self.theme.panel_border, 0.5));
 
         // Move History List
-        const list_y = constants.PANEL_Y + 60;
-        const list_height = constants.PANEL_HEIGHT - 160;
-        const row_height = 25;
+        const list_y = constants.PANEL_Y + 160;
+        const list_height = constants.PANEL_HEIGHT - 350;
+        const row_height = 30;
         const moves_per_page = @divTrunc(list_height, row_height);
 
-        const total_moves = move_history.len;
-        const start_move = if (total_moves > moves_per_page * 2)
-            ((total_moves - 1) / 2 - moves_per_page + 1) * 2
-        else
-            0;
+        const total_moves = game.move_history.items.len;
+        const start_move = if (total_moves > moves_per_page * 2) ((total_moves - 1) / 2 - moves_per_page + 1) * 2 else 0;
 
         var i: usize = start_move;
         var row: i32 = 0;
@@ -354,43 +339,114 @@ pub const Renderer = struct {
 
             const y = list_y + row * row_height;
 
-            // Draw move number
-            rl.DrawText(num_text, constants.PANEL_X + 20, y, 20, rl.GRAY);
+            rl.DrawText(num_text, constants.PANEL_X + 30, y, 22, self.theme.text_secondary);
 
             // White move
             var white_buf: [16]u8 = undefined;
-            const white_text = move_history[i].toNotation(&white_buf) catch "??";
+            const white_text = game.move_history.items[i].toNotation(&white_buf) catch "??";
             const white_text_z = std.fmt.bufPrintZ(&buf, "{s}", .{white_text}) catch "??";
-            rl.DrawText(white_text_z, constants.PANEL_X + 60, y, 20, rl.WHITE);
+            rl.DrawText(white_text_z, constants.PANEL_X + 80, y, 22, self.theme.text_primary);
 
             // Black move
             if (i + 1 < total_moves) {
                 var black_buf: [16]u8 = undefined;
-                const black_text = move_history[i + 1].toNotation(&black_buf) catch "??";
+                const black_text = game.move_history.items[i + 1].toNotation(&black_buf) catch "??";
                 const black_text_z = std.fmt.bufPrintZ(&buf, "{s}", .{black_text}) catch "??";
-                rl.DrawText(black_text_z, constants.PANEL_X + 160, y, 20, rl.WHITE);
+                rl.DrawText(black_text_z, constants.PANEL_X + 180, y, 22, self.theme.text_primary);
             }
 
             i += 2;
             if (row >= moves_per_page) break;
         }
 
-        // Buttons at the bottom
-        // Draw buttons is handled by main app for click detection but we can draw them here
+        // Captured Pieces
+        self.drawCapturedPieces(game);
+    }
+
+    fn drawTurnIndicator(self: *Renderer, active_color: Color) void {
+        const x = constants.PANEL_X + 30;
+        const y = constants.PANEL_Y + 30;
+        const width = constants.PANEL_WIDTH - 60;
+        const height = 50;
+
+        const rect = rl.Rectangle{ .x = @floatFromInt(x), .y = @floatFromInt(y), .width = @floatFromInt(width), .height = height };
+        rl.DrawRectangleRounded(rect, 0.5, 10, rl.Fade(self.theme.panel_border, 0.3));
+
+        const text = if (active_color == .White) "White's Turn" else "Black's Turn";
+        const font_size = 24;
+        const text_width = rl.MeasureText(text, font_size);
+        const text_x = x + @divTrunc(width - text_width, 2);
+        const text_y = y + @divTrunc(height - font_size, 2);
+
+        // Small indicator circle
+        const circle_color = if (active_color == .White) self.theme.light_square else self.theme.dark_square;
+        rl.DrawCircle(x + 25, y + @divTrunc(height, 2), 10, circle_color);
+        rl.DrawCircleLines(x + 25, y + @divTrunc(height, 2), 10, self.theme.text_primary);
+
+        rl.DrawText(text, text_x, text_y, font_size, self.theme.text_primary);
+    }
+
+    fn drawCapturedPieces(self: *Renderer, game: *const ChessGame) void {
+        const start_y = constants.PANEL_Y + constants.PANEL_HEIGHT - 180;
+        const piece_size = 35.0;
+
+        // Draw labels
+        rl.DrawText("Captured Pieces", constants.PANEL_X + 30, start_y, 20, self.theme.text_secondary);
+
+        var white_captured = std.EnumMap(core.types.PieceType, u32).init(.{});
+        var black_captured = std.EnumMap(core.types.PieceType, u32).init(.{});
+
+        for (game.undo_history.items) |undo| {
+            if (!undo.captured_piece.isEmpty()) {
+                const p = undo.captured_piece;
+                const map = if (p.getColor() == .White) &white_captured else &black_captured;
+                const count = map.get(p.getType()) orelse 0;
+                map.put(p.getType(), count + 1);
+            }
+        }
+
+        const piece_types = [_]core.types.PieceType{ .Pawn, .Knight, .Bishop, .Rook, .Queen };
+
+        // Draw white captured pieces (by black)
+        var wx: f32 = @as(f32, @floatFromInt(constants.PANEL_X)) + 30;
+        for (piece_types) |pt| {
+            if (white_captured.get(pt)) |count| {
+                const piece = Piece.init(.White, pt);
+                for (0..count) |_| {
+                    self.drawPieceAt(piece, wx, @floatFromInt(start_y + 30), piece_size);
+                    wx += piece_size * 0.4;
+                }
+                wx += piece_size * 0.6;
+            }
+        }
+
+        // Draw black captured pieces (by white)
+        var bx: f32 = @as(f32, @floatFromInt(constants.PANEL_X)) + 30;
+        for (piece_types) |pt| {
+            if (black_captured.get(pt)) |count| {
+                const piece = Piece.init(.Black, pt);
+                for (0..count) |_| {
+                    self.drawPieceAt(piece, bx, @floatFromInt(start_y + 80), piece_size);
+                    bx += piece_size * 0.4;
+                }
+                bx += piece_size * 0.6;
+            }
+        }
     }
 
     pub fn drawButton(self: *Renderer, rect: rl.Rectangle, text: [*c]const u8, hovered: bool) void {
-        _ = self;
-        const bg_color = if (hovered) rl.Color{ .r = 80, .g = 80, .b = 80, .a = 255 } else rl.Color{ .r = 60, .g = 60, .b = 60, .a = 255 };
-        rl.DrawRectangleRec(rect, bg_color);
-        rl.DrawRectangleLinesEx(rect, 2, rl.GRAY);
+        const bg_color = if (hovered) self.theme.accent else self.theme.panel_bg;
+        const text_color = if (hovered) rl.BLACK else self.theme.text_primary;
 
-        const font_size = 20;
+        rl.DrawRectangleRounded(rect, constants.BUTTON_CORNER_RADIUS, 10, bg_color);
+        rl.DrawRectangleRoundedLines(rect, constants.BUTTON_CORNER_RADIUS, 10, self.theme.accent);
+
+        const font_size = 22;
         const text_width = rl.MeasureText(text, font_size);
         const text_x = rect.x + (rect.width - @as(f32, @floatFromInt(text_width))) / 2.0;
         const text_y = rect.y + (rect.height - @as(f32, @floatFromInt(font_size))) / 2.0;
 
-        rl.DrawText(text, @intFromFloat(text_x), @intFromFloat(text_y), font_size, rl.WHITE);
+        rl.DrawText(text, @intFromFloat(text_x), @intFromFloat(text_y), font_size, text_color);
     }
 };
 

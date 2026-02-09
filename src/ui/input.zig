@@ -1,3 +1,5 @@
+const std = @import("std");
+const builtin = @import("builtin");
 const rl = @import("raylib.zig").rl;
 const core = @import("core");
 const Square = core.Square;
@@ -23,6 +25,18 @@ pub const InputHandler = struct {
 
     pub fn getMousePosition() rl.Vector2 {
         return rl.GetMousePosition();
+    }
+
+    /// Robust collision detection that accounts for float precision issues in ReleaseFast mode
+    pub fn checkCollisionPointRec(point: rl.Vector2, rect: rl.Rectangle) bool {
+        const px = @as(i32, @intFromFloat(point.x));
+        const py = @as(i32, @intFromFloat(point.y));
+        const rx = @as(i32, @intFromFloat(rect.x));
+        const ry = @as(i32, @intFromFloat(rect.y));
+        const rw = @as(i32, @intFromFloat(rect.width));
+        const rh = @as(i32, @intFromFloat(rect.height));
+        
+        return px >= rx and px <= rx + rw and py >= ry and py <= ry + rh;
     }
 
     fn mouseToSquare(mouse_pos: rl.Vector2) ?Square {
